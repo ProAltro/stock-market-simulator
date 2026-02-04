@@ -5,7 +5,8 @@ A full-featured paper trading platform for learning stock market trading without
 ## Features
 
 - 📈 **Real-time Market Data** - TwelveData integration with mock fallback
-- 💰 **Paper Trading** - Trade stocks with $100,000 virtual cash
+- 💰 **Paper Trading** - Trade stocks with virtual cash
+- 👤 **Multiple Profiles** - Switch between Standard and Ranked trading modes
 - 📊 **Portfolio Tracking** - Real-time P&L, positions, and trade history
 - 🏆 **Leaderboard** - Compete with other traders
 - 📉 **TradingView Charts** - Professional candlestick charts
@@ -30,49 +31,62 @@ A full-featured paper trading platform for learning stock market trading without
 ### Prerequisites
 - Node.js 18+
 - Docker & Docker Compose
+- Git
 
 ### Quick Start
 
-1. **Start the infrastructure** (PostgreSQL & Redis):
+1. **Clone the repository** (if not already done):
+   ```bash
+   git clone <repository-url>
+   cd decrypt
+   ```
+
+2. **Start the infrastructure** (PostgreSQL, Redis, & Backend):
    ```bash
    cd docker
-   docker-compose up -d postgres redis
+   docker-compose up -d
    ```
+   *This starts the database, cache, and the backend API service.*
 
-2. **Install backend dependencies**:
+3. **Install Dependencies (Local Development)**:
+   If you want to run services locally outside of Docker:
    ```bash
+   # Backend
    cd backend
    npm install
+
+   # Frontend
+   cd ../frontend
+   # (No npm install needed for frontend as it uses CDN scripts, but you might need a server)
    ```
 
-3. **Setup database**:
+4. **Setup Database (First time only)**:
+   If running via Docker, the backend service usually handles migrations, but you can manually seed:
    ```bash
+   cd backend
    npm run db:push
    npm run db:seed
    ```
 
-4. **Start the backend**:
-   ```bash
-   npm run dev
-   ```
-
-5. **Open the frontend**:
-   Open `frontend/index.html` in your browser, or use a local server:
+5. **Start Frontend**:
+   The frontend is a static site. You can serve it using `npx serve` or any static file server.
    ```bash
    cd frontend
    npx serve .
    ```
+   Open http://localhost:3000 (or whatever port `serve` uses).
 
-### Environment Variables
+## Project Structure
 
-Copy `.env.example` to `.env` and configure:
+This project is a Monorepo containing both the backend and frontend.
 
-| Variable | Description |
-|----------|-------------|
-| `DATABASE_URL` | PostgreSQL connection string |
-| `REDIS_URL` | Redis connection string |
-| `JWT_SECRET` | Secret for JWT tokens |
-| `TWELVEDATA_API_KEY` | TwelveData API key (optional, mock data works without it) |
+```
+decrypt/           <-- Root
+├── backend/       <-- Node.js API Service
+├── frontend/      <-- Static Web Application
+├── docker/        <-- Docker Configuration
+└── ...
+```
 
 ## API Endpoints
 
@@ -107,32 +121,6 @@ Copy `.env.example` to `.env` and configure:
 | GET | `/api/leaderboard` | Get top traders |
 | GET | `/api/leaderboard/me` | Get your rank |
 
-## Project Structure
-
-```
-decrypt/
-├── backend/
-│   ├── src/
-│   │   ├── modules/
-│   │   │   ├── auth/
-│   │   │   ├── market-data/
-│   │   │   ├── orders/
-│   │   │   ├── portfolio/
-│   │   │   ├── instruments/
-│   │   │   ├── risk/
-│   │   │   └── leaderboard/
-│   │   ├── plugins/
-│   │   └── app.js
-│   └── prisma/
-├── frontend/
-│   ├── assets/
-│   │   ├── styles.css
-│   │   └── app.js
-│   └── index.html
-└── docker/
-    └── docker-compose.yml
-```
-
 ## Development
 
 ### Running Tests
@@ -145,15 +133,6 @@ npm test
 ```bash
 npm run db:migrate
 ```
-
-## Future Roadmap
-
-- [ ] Options & Futures trading
-- [ ] Real-time WebSocket updates
-- [ ] Algorithm trading module
-- [ ] Mobile app (PWA/Capacitor)
-- [ ] Social features
-- [ ] Trading competitions
 
 ## License
 

@@ -27,6 +27,7 @@
 ### Key Features
 - 📈 Real-time market data (Yahoo Finance with mock fallback)
 - 💰 Paper trading with virtual $100,000
+- 👤 Multiple trading profiles (Standard & Ranked)
 - 📊 Portfolio tracking with real-time P&L
 - 🏆 Public leaderboard system
 - 📉 TradingView professional charts
@@ -54,14 +55,17 @@ Before you begin, ensure you have installed:
 #### 1. Clone and Navigate
 ```bash
 git clone <repository-url>
+#### 1. Clone and Navigate
+```bash
+git clone <repository-url>
 cd decrypt
 ```
 
-#### 2. Start Infrastructure Services
-Start PostgreSQL and Redis using Docker Compose:
+#### 2. Start Services with Docker
+To start the entire stack (PostgreSQL, Redis, and Backend):
 ```bash
 cd docker
-docker-compose up -d postgres redis
+docker-compose up -d
 ```
 
 This will:
