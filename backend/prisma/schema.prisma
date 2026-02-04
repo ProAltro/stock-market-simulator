@@ -1,0 +1,166 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// User authentication
+model User {
+  id                String          @id @default(uuid())
+  email             String          @unique
+  passwordHash      String          @map("password_hash")
+  displayName       String?         @map("display_name")
+  isPublic          Boolean         @default(true) @map("is_public")
+  currency          String          @default("USD")
+  showOnLeaderboard Boolean         @default(false) @map("show_on_leaderboard")
+  activeMode        AccountMode     @default(STANDARD) @map("active_mode")
+  createdAt         DateTime        @default(now()) @map("created_at")
+  updatedAt         DateTime        @updatedAt @map("updated_at")
+  accounts          Account[]
+  oauthProviders    OAuthProvider[]
+
+  @@map("users")
+}
+
+// OAuth providers for future Google/GitHub login
+model OAuthProvider {
+  id             String   @id @default(uuid())
+  userId         String   @map("user_id")
+  providerName   String   @map("provider_name")
+  providerUserId String   @map("provider_user_id")
+  createdAt      DateTime @default(now()) @map("created_at")
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([providerName, providerUserId])
+  @@map("oauth_providers")
+}
+
+// Trading account (users can have multiple accounts later)
+model Account {
+  id             String      @id @default(uuid())
+  userId         String      @map("user_id")
+  name           String      @default("Default")
+  mode           AccountMode @default(STANDARD)
+  cashBalance    Decimal     @default(100000) @map("cash_balance") @db.Decimal(20, 4)
+  initialBalance Decimal     @default(100000) @map("initial_balance") @db.Decimal(20, 4)
+  marginBalance  Decimal     @default(0) @map("margin_balance") @db.Decimal(20, 4)
+  createdAt      DateTime    @default(now()) @map("created_at")
+  updatedAt      DateTime    @updatedAt @map("updated_at")
+  user           User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  positions      Position[]
+  orders         Order[]
+
+  @@map("accounts")
+}
+
+enum AccountMode {
+  STANDARD
+  RANKED
+}
+
+// Financial instruments (stocks, futures, options)
+model Instrument {
+  id               String         @id @default(uuid())
+  symbol           String         @unique
+  name             String
+  type             InstrumentType
+  underlyingSymbol String?        @map("underlying_symbol")
+  expiryDate       DateTime?      @map("expiry_date")
+  strikePrice      Decimal?       @map("strike_price") @db.Decimal(20, 4)
+  optionType       OptionType?    @map("option_type")
+  lotSize          Int            @default(1) @map("lot_size")
+  exchange         String         @default("NASDAQ")
+  isActive         Boolean        @default(true) @map("is_active")
+  createdAt        DateTime       @default(now()) @map("created_at")
+  positions        Position[]
+  orders           Order[]
+
+  @@map("instruments")
+}
+
+enum InstrumentType {
+  EQUITY
+  FUTURE
+  OPTION
+}
+
+enum OptionType {
+  CALL
+  PUT
+}
+
+// Current positions/holdings
+model Position {
+  id           String     @id @default(uuid())
+  accountId    String     @map("account_id")
+  instrumentId String     @map("instrument_id")
+  quantity     Decimal    @db.Decimal(20, 4)
+  avgPrice     Decimal    @map("avg_price") @db.Decimal(20, 4)
+  direction    Direction
+  createdAt    DateTime   @default(now()) @map("created_at")
+  updatedAt    DateTime   @updatedAt @map("updated_at")
+  account      Account    @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  instrument   Instrument @relation(fields: [instrumentId], references: [id])
+
+  @@unique([accountId, instrumentId, direction])
+  @@map("positions")
+}
+
+enum Direction {
+  LONG
+  SHORT
+}
+
+// Order requests
+model Order {
+  id           String      @id @default(uuid())
+  accountId    String      @map("account_id")
+  instrumentId String      @map("instrument_id")
+  orderType    OrderType   @map("order_type")
+  side         Side
+  quantity     Decimal     @db.Decimal(20, 4)
+  limitPrice   Decimal?    @map("limit_price") @db.Decimal(20, 4)
+  status       OrderStatus @default(PENDING)
+  filledQty    Decimal     @default(0) @map("filled_qty") @db.Decimal(20, 4)
+  avgFillPrice Decimal?    @map("avg_fill_price") @db.Decimal(20, 4)
+  createdAt    DateTime    @default(now()) @map("created_at")
+  updatedAt    DateTime    @updatedAt @map("updated_at")
+  account      Account     @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  instrument   Instrument  @relation(fields: [instrumentId], references: [id])
+  trades       Trade[]
+
+  @@map("orders")
+}
+
+enum OrderType {
+  MARKET
+  LIMIT
+}
+
+enum Side {
+  BUY
+  SELL
+}
+
+enum OrderStatus {
+  PENDING
+  FILLED
+  PARTIAL
+  CANCELLED
+  REJECTED
+}
+
+// Executed trades
+model Trade {
+  id             String   @id @default(uuid())
+  orderId        String   @map("order_id")
+  executionPrice Decimal  @map("execution_price") @db.Decimal(20, 4)
+  quantity       Decimal  @db.Decimal(20, 4)
+  createdAt      DateTime @default(now()) @map("created_at")
+  order          Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@map("trades")
+}

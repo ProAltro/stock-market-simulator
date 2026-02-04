@@ -1,0 +1,34 @@
+{
+  "name": "decrypt-backend",
+  "version": "1.0.0",
+  "description": "Paper Trading Platform Backend",
+  "main": "src/app.js",
+  "type": "module",
+  "scripts": {
+    "dev": "node --watch src/app.js",
+    "start": "node src/app.js",
+    "db:generate": "prisma generate",
+    "db:migrate": "prisma migrate dev",
+    "db:push": "prisma db push",
+    "db:seed": "node prisma/seed.js",
+    "test": "node --test src/**/*.test.js"
+  },
+  "dependencies": {
+    "@fastify/cors": "^9.0.1",
+    "@fastify/jwt": "^8.0.0",
+    "@fastify/rate-limit": "^9.1.0",
+    "@prisma/client": "^5.10.0",
+    "axios": "^1.6.7",
+    "bcrypt": "^5.1.1",
+    "decimal.js": "^10.4.3",
+    "dotenv": "^16.4.1",
+    "fastify": "^4.26.0",
+    "fastify-plugin": "^4.5.1",
+    "ioredis": "^5.3.2",
+    "yahoo-finance2": "^3.13.0"
+  },
+  "devDependencies": {
+    "pino-pretty": "^10.3.1",
+    "prisma": "^5.10.0"
+  }
+}
