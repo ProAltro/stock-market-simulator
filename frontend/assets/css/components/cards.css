@@ -1,0 +1,169 @@
+/* ==========================================
+   Card & Stats Components
+   ========================================== */
+
+.card {
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    padding: 1rem;
+    margin-bottom: 1rem;
+}
+
+.card h2 {
+    font-size: 0.9rem;
+    font-weight: bold;
+    margin-bottom: 0.75rem;
+    text-transform: uppercase;
+    border-bottom: 1px solid var(--border-color);
+    padding-bottom: 0.5rem;
+}
+
+/* Stats Grid */
+.stats-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 0.5rem;
+    margin-bottom: 1rem;
+}
+
+.stat-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    padding: 0.75rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+
+.stat-card.primary {
+    border: 2px solid var(--text-primary);
+}
+
+.stat-card.large {
+    padding: 1rem;
+}
+
+.stat-label {
+    font-size: 0.65rem;
+    color: var(--text-muted);
+    text-transform: uppercase;
+}
+
+.stat-card.primary .stat-label {
+    color: var(--text-secondary);
+}
+
+.stat-value {
+    font-size: 1.1rem;
+    font-weight: bold;
+}
+
+.stat-value.big {
+    font-size: 1.5rem;
+}
+
+.stat-change {
+    font-size: 0.75rem;
+}
+
+.stat-details {
+    display: flex;
+    gap: 1rem;
+    font-size: 0.75rem;
+    margin-top: 0.25rem;
+}
+
+/* Dashboard Grid */
+.dashboard-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.5rem;
+}
+
+@media (max-width: 1024px) {
+    .dashboard-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+/* Watchlist */
+.watchlist {
+    display: flex;
+    flex-direction: column;
+}
+
+.watchlist-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.5rem;
+    border-bottom: 1px solid var(--border-color);
+    cursor: pointer;
+}
+
+.watchlist-item:hover {
+    background: var(--bg-hover);
+}
+
+.stock-info {
+    display: flex;
+    flex-direction: column;
+}
+
+.stock-symbol {
+    font-weight: bold;
+    font-size: 0.85rem;
+}
+
+.stock-name {
+    font-size: 0.7rem;
+    color: var(--text-muted);
+}
+
+.stock-price {
+    text-align: right;
+}
+
+.stock-price .price {
+    font-weight: bold;
+    font-size: 0.85rem;
+}
+
+.stock-price .change {
+    font-size: 0.75rem;
+    display: block;
+}
+
+/* Positions List */
+.positions-list {
+    display: flex;
+    flex-direction: column;
+}
+
+.position-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.5rem;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.position-info .symbol {
+    font-weight: bold;
+    font-size: 0.85rem;
+}
+
+.position-info .qty {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    display: block;
+}
+
+.position-value {
+    text-align: right;
+}
+
+.position-value .pnl {
+    font-size: 0.75rem;
+    display: block;
+}

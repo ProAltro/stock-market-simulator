@@ -14,9 +14,10 @@
 6. [Frontend Structure](#frontend-structure)
 7. [API Documentation](#api-documentation)
 8. [Market Data System](#market-data-system)
-9. [Development Workflow](#development-workflow)
-10. [Deployment](#deployment)
-11. [Future Enhancements](#future-enhancements)
+9. [Backtesting System](#backtesting-system)
+10. [Development Workflow](#development-workflow)
+11. [Deployment](#deployment)
+12. [Future Enhancements](#future-enhancements)
 
 ---
 
@@ -32,11 +33,15 @@
 - 🏆 Public leaderboard system
 - 📉 TradingView professional charts
 - 🔐 JWT-based authentication
+- 🌍 Multi-currency with regional locale formatting
+- 📱 Responsive mobile-first design with collapsible sidebar
+- 🧪 Strategy backtesting with sandboxed Python execution (Judge0)
 - 🚀 Fast and scalable architecture
 
 ### Tech Stack
 - **Backend**: Node.js + Fastify + Prisma + PostgreSQL + Redis
 - **Frontend**: Vanilla JavaScript + Alpine.js + TradingView Charts
+- **Code Execution**: Judge0 (sandboxed Python for backtesting)
 - **Infrastructure**: Docker + Docker Compose
 
 ---
@@ -175,10 +180,10 @@ Visit `http://localhost:3000` (or wherever serve opens it).
 └─────────────┘      └──────────────┘
        │
        ▼
-┌────────────────────┐
-│  Yahoo Finance API │
-│   (Market Data)    │
-└────────────────────┘
+┌────────────────────┐     ┌─────────────────────┐
+│  Yahoo Finance API │     │  Judge0 Sandbox      │
+│   (Market Data)    │     │  (Backtest Execution)│
+└────────────────────┘     └─────────────────────┘
 ```
 
 ### Design Principles
@@ -351,13 +356,23 @@ backend/
 │   │   │   └── routes.js     # Portfolio & P&L
 │   │   ├── leaderboard/
 │   │   │   └── routes.js     # Top traders
+│   │   ├── backtest/
+│   │   │   └── routes.js     # Backtest submission & history
 │   │   └── profile/
 │   │       └── routes.js     # User profile management
 │   └── services/
-│       └── market/
-│           ├── index.js          # Market data service
-│           ├── yahooAdapter.js   # Yahoo Finance integration
-│           └── mockAdapter.js    # Mock data for dev/testing
+│       ├── market/
+│       │   ├── index.js          # Market data service
+│       │   ├── yahooAdapter.js   # Yahoo Finance integration
+│       │   └── mockAdapter.js    # Mock data for dev/testing
+│       ├── backtest/
+│       │   └── backtestRunner.js # Orchestrates data fetch, wrapping, execution
+│       ├── indicators/
+│       │   └── indicators.js     # SMA, EMA, RSI, MACD, Bollinger, ATR, etc.
+│       ├── judge0/
+│       │   └── judge0.js         # Judge0 API client (submit/poll)
+│       └── currency/
+│           └── index.js          # Exchange rate lookups
 ├── prisma/
 │   ├── schema.prisma         # Database schema
 │   └── seed.js              # Initial data seeding
@@ -424,48 +439,112 @@ The frontend is a vanilla JavaScript SPA using Alpine.js for reactivity:
 
 ```
 frontend/
-├── index.html              # Main HTML (contains all pages)
+├── index.html              # Main HTML shell & template loader
 ├── assets/
-│   ├── app.js             # Alpine.js app logic & API calls
-│   └── styles.css         # Complete styling
-├── components/            # (Future: Reusable components)
-└── pages/                 # (Future: Multi-page structure)
+│   ├── styles.css          # Complete styling (single-file)
+│   ├── css/                # Modular CSS (dev)
+│   │   ├── main.css        # CSS entry point (@imports)
+│   │   ├── components/     # Reusable styles (base, sidebar, cards, etc.)
+│   │   └── pages/          # Page-specific styles
+│   └── js/
+│       ├── main.js         # Alpine.js app definition & init
+│       ├── api.js          # Centralized fetch helpers
+│       ├── utils.js        # formatCurrency (locale-aware), formatPercent
+│       ├── templateLoader.js
+│       └── modules/        # Feature modules mixed into Alpine app
+│           ├── auth.js     # Login/register/logout
+│           ├── market.js   # Quotes, search, chart, watchlist
+│           ├── orders.js   # Place orders, order history
+│           ├── portfolio.js # Portfolio, profile, leaderboard, settings
+│           ├── backtest.js # Backtesting engine
+│           └── router.js   # Hash-based page routing
+├── components/             # HTML partials loaded at runtime
+│   ├── auth-modal.html
+│   ├── sidebar.html
+│   └── loading.html
+└── pages/                  # Page HTML partials loaded at runtime
+    ├── dashboard.html
+    ├── trade.html
+    ├── portfolio.html
+    ├── leaderboard.html
+    ├── backtest.html
+    ├── profile.html
+    └── docs.html
 ```
 
 ### Alpine.js State Management
 
+The app is composed of feature modules mixed into a single Alpine.js component:
+
 ```javascript
-function app() {
+// main.js
+import { authModule } from './modules/auth.js';
+import { portfolioModule } from './modules/portfolio.js';
+import { marketModule } from './modules/market.js';
+// ...
+
+window.app = function () {
   return {
-    // Global state
-    user: null,
-    account: null,
+    loading: true,
     currentPage: 'dashboard',
-    
-    // Initialize app
+    sidebarOpen: false,          // Mobile sidebar state
+    displayCurrency: 'base',     // 'base' (profile currency) or 'native'
+
+    ...authModule,
+    ...portfolioModule,
+    ...marketModule,
+    // ... other modules
+
+    // Currency helpers
+    fmtBase(value) { /* always profile currency */ },
+    fmtPos(nativeVal, baseVal, currency) { /* respects toggle */ },
+
     async init() {
-      await this.loadUser();
-      this.loadMarketData();
+      await this.initAuth();
+      this.initRouter();
+      if (this.user) await this.loadDashboardData();
     },
-    
-    // API calls
-    async api(endpoint, options = {}) {
-      // Centralized fetch with JWT token
-    }
+
+    async loadDashboardData() {
+      await this.fetchProfile();
+      await Promise.all([
+        this.fetchPortfolio(), this.fetchOrders(),
+        this.fetchWatchlist(), this.fetchLeaderboard(),
+      ]);
+      // Pre-load default symbol so trade page is ready
+      if (this.selectedSymbol) await this.selectSymbol(this.selectedSymbol);
+    },
   };
-}
+};
 ```
 
 ### Page Routing
 
-All pages are in `index.html` with `x-show` directives:
+Pages are loaded as HTML partials at startup and injected into the DOM. Alpine.js `x-show` directives handle visibility:
 ```html
 <div x-show="currentPage === 'dashboard'">Dashboard</div>
 <div x-show="currentPage === 'trade'">Trading</div>
 <div x-show="currentPage === 'portfolio'">Portfolio</div>
 ```
 
-Navigation updates `currentPage` state.
+Navigation updates `currentPage` state. On mobile, nav links also close the sidebar (`sidebarOpen = false`).
+
+### Responsive Design
+
+The UI uses a monochrome, rough-corner terminal aesthetic. Responsiveness is achieved without changing this look:
+
+- **Mobile sidebar**: Hidden off-screen by default, toggled via a hamburger button (☰) with an overlay backdrop
+- **Breakpoints**: 768px (mobile), 1024px (tablet), with stats grids collapsing from 4→2→1 columns
+- **Scrollable tables**: Portfolio holdings, order history, and leaderboard tables wrap in `.table-scroll` for horizontal scroll on small screens
+- **Flexible chart controls**: Timeframe buttons, interval selector, and symbol info wrap gracefully
+
+### Multi-Currency Display
+
+The sidebar contains a segmented toggle (`[USD | Native]`) that switches between:
+- **Base currency**: The user's profile currency (USD, INR, EUR, GBP) — used for all account-level values
+- **Native currency**: The instrument's trading currency — useful for viewing original prices
+
+`formatCurrency()` in `utils.js` maps each currency to its regional locale (e.g. INR → `en-IN`, GBP → `en-GB`) so numbers are formatted with the correct separators and symbols.
 
 ### TradingView Charts
 
@@ -626,6 +705,71 @@ Response: 200 OK
 }
 ```
 
+### Backtesting Endpoints
+
+#### Submit Backtest
+```http
+POST /api/backtest/submit
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "symbols": ["AAPL"],
+  "timeframe": "1y",
+  "interval": "1d",
+  "code": "symbol = _SYMBOLS[0]\ndata = get_ohlcv(symbol)\n..."
+}
+
+Response: 200 OK
+{
+  "submissionId": "uuid",
+  "success": true,
+  "portfolio_value": 105234.50,
+  "cash": 87654.30,
+  "total_return": 5234.50,
+  "return_percent": 5.23,
+  "total_trades": 12,
+  "trades": [...],
+  "metrics": {
+    "win_rate": 66.67,
+    "profit_factor": 2.15,
+    "max_drawdown": 3.42,
+    "max_exposure": 50000.00,
+    "return_on_exposure": 10.47
+  },
+  "currency": "USD",
+  "executionTime": "0.245",
+  "memoryUsed": 8192
+}
+```
+
+#### Get Backtest History
+```http
+GET /api/backtest/history?limit=20&offset=0
+Authorization: Bearer <token>
+
+Response: 200 OK
+{
+  "submissions": [...],
+  "total": 5
+}
+```
+
+#### Get Strategy Templates
+```http
+GET /api/backtest/templates
+
+Response: 200 OK
+[
+  {
+    "name": "Simple SMA Crossover",
+    "description": "Buy when short SMA crosses above long SMA...",
+    "code": "..."
+  },
+  ...
+]
+```
+
 ---
 
 ## Market Data System
@@ -702,6 +846,128 @@ await fastify.redis.setex(`market:${symbol}`, 60, JSON.stringify(quote));
 **Cache TTL:**
 - Quotes: 60 seconds (real-time-ish)
 - Historical data: 5 minutes (less volatile)
+
+---
+
+## Backtesting System
+
+The backtester lets users write Python trading strategies and run them against real historical data. Code executes in a sandboxed **Judge0** environment for security.
+
+### Architecture
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  Frontend (backtest.html)                                   │
+│  ┌──────────────┐  ┌───────────┐  ┌──────────────────────┐ │
+│  │ Config Panel  │  │ Code      │  │ Results Panel        │ │
+│  │ (symbols,     │  │ Editor    │  │ (metrics, trades,    │ │
+│  │  timeframe,   │  │ (Python)  │  │  positions)          │ │
+│  │  templates)   │  │           │  │                      │ │
+│  └──────────────┘  └───────────┘  └──────────────────────┘ │
+└────────────────────────┬────────────────────────────────────┘
+                         │ POST /api/backtest/submit
+                         ▼
+┌─────────────────────────────────────────────────────────────┐
+│  Backend (backtestRunner.js)                                │
+│  1. Fetch OHLCV from Yahoo Finance for each symbol          │
+│  2. Calculate all indicators (SMA, EMA, RSI, MACD, etc.)    │
+│  3. Generate Python wrapper with injected data + user code  │
+│  4. Submit to Judge0 for sandboxed execution                │
+│  5. Parse JSON output → return metrics & trades             │
+└────────────────────────┬────────────────────────────────────┘
+                         │
+                         ▼
+┌──────────────────────────────┐
+│  Judge0 (Docker containers)  │
+│  - judge0-server (API)       │
+│  - judge0-workers (exec)     │
+│  - judge0-redis              │
+│  - judge0-postgres           │
+│  Python 3 sandbox:           │
+│  • 10s CPU time limit        │
+│  • 128 MB memory limit       │
+└──────────────────────────────┘
+```
+
+### How It Works
+
+1. **User writes a strategy** in the code editor using the provided Python API
+2. **Backend fetches historical data** from Yahoo Finance for the selected symbols and timeframe
+3. **Technical indicators** are pre-computed server-side (SMA, EMA, RSI, MACD, Bollinger Bands, ATR, Stochastic, ADX, OBV, VWAP)
+4. **Data is injected** into a Python wrapper template along with trading functions (`buy()`, `sell()`, `get_position()`, etc.)
+5. **Code executes in Judge0** — a sandboxed Docker container with strict CPU/memory limits
+6. **Results are parsed** — portfolio value, trades, and quantitative metrics (win rate, profit factor, max drawdown, etc.)
+7. **Submission is saved** to the database for history
+
+### Strategy API Reference
+
+Strategies have access to these pre-injected functions:
+
+#### Data Access
+| Function | Description |
+|----------|-------------|
+| `get_ohlcv(symbol)` | OHLCV data as list of dicts (`time`, `open`, `high`, `low`, `close`, `volume`) |
+| `get_sma(symbol, period)` | Simple Moving Average |
+| `get_ema(symbol, period)` | Exponential Moving Average |
+| `get_rsi(symbol, period=14)` | Relative Strength Index (0–100) |
+| `get_macd(symbol)` | Dict with `macd`, `signal`, `histogram` arrays |
+| `get_bollinger(symbol, period=20, std=2)` | Dict with `upper`, `middle`, `lower`, `percentB`, `bandwidth` |
+| `get_atr(symbol, period=14)` | Average True Range |
+| `get_stochastic(symbol, k=14, d=3)` | Dict with `k`, `d` arrays |
+| `get_adx(symbol, period=14)` | Dict with `adx`, `plusDI`, `minusDI` |
+| `get_obv(symbol)` | On-Balance Volume |
+| `get_vwap(symbol)` | Volume Weighted Average Price |
+| `get_correlation(sym1, sym2, period=20)` | Cross-symbol correlation |
+
+#### Trading
+| Function | Description |
+|----------|-------------|
+| `buy(symbol, quantity, price=None)` | Buy shares (defaults to current close) |
+| `sell(symbol, quantity, price=None)` | Sell shares |
+| `get_cash()` | Available cash balance |
+| `get_position(symbol)` | Quantity held for a symbol |
+| `get_positions()` | Dict of all positions `{symbol: qty}` |
+| `get_price(symbol)` | Latest known price |
+
+#### Global Variables
+| Variable | Description |
+|----------|-------------|
+| `_SYMBOLS` | List of symbols passed in configuration |
+| `_DATA` | Raw data bundle (advanced use) |
+
+### Built-in Strategy Templates
+
+The platform ships with 6 ready-to-run templates:
+1. **Simple SMA Crossover** — Buy when 20-SMA crosses above 50-SMA
+2. **RSI Mean Reversion** — Buy when RSI < 30, sell when RSI > 70
+3. **MACD Momentum** — Trade on MACD/signal line crossovers
+4. **Bollinger Breakout** — Buy on upper band breakout, sell on lower band breakdown
+5. **Stochastic Oscillator** — Enter on oversold/overbought crosses
+6. **VWAP Trend** — Follow price relative to VWAP
+
+### Result Metrics
+
+Each backtest returns:
+- **Portfolio Value** — Final account value
+- **Total Return** — Dollar and percentage P&L
+- **Win Rate** — Percentage of profitable (closed) trades
+- **Profit Factor** — Gross profit / gross loss
+- **Max Drawdown** — Largest peak-to-trough decline (%)
+- **Max Exposure** — Highest capital invested at any point
+- **Return on Exposure** — Return relative to max capital used
+
+### Docker Setup
+
+Judge0 requires 4 containers (defined in `docker/docker-compose.yml`):
+
+| Container | Purpose |
+|-----------|---------|
+| `judge0-server` | REST API on port 2358 |
+| `judge0-workers` | Code execution workers |
+| `judge0-redis` | Job queue |
+| `judge0-postgres` | Submission storage |
+
+The backend connects to Judge0 via `JUDGE0_URL=http://judge0-server:2358` (internal Docker network). The `privileged: true` flag is required for Judge0's container isolation (isolate/cgroups).
 
 ---
 
@@ -860,9 +1126,9 @@ Static files can be deployed to:
 - **S3 + CloudFront**: Upload files
 - **GitHub Pages**: Push to `gh-pages` branch
 
-Update `frontend/assets/app.js` with production API URL:
+Update `frontend/assets/js/api.js` with production API URL:
 ```javascript
-const API_BASE = 'https://api.yourdomain.com/api';
+export const API_URL = 'https://api.yourdomain.com/api';
 ```
 
 ### Production Checklist
@@ -934,7 +1200,6 @@ const API_BASE = 'https://api.yourdomain.com/api';
 - Add OpenAPI/Swagger docs
 - Set up CI/CD pipeline
 - Database query optimization
-- Frontend componentization
 - TypeScript migration
 
 ---

@@ -1,0 +1,30 @@
+/*
+ * DECRYPT - Main CSS Entry Point
+ * This file imports all CSS modules for the application.
+ * 
+ * Structure:
+ * - components/  - Reusable UI component styles
+ * - pages/       - Page-specific styles
+ * 
+ * Note: The original styles.css is kept as the single-file version.
+ * These modular imports can be used for development with a build tool.
+ */
+
+/* Base / Reset */
+@import 'components/base.css';
+
+/* Component Styles */
+@import 'components/auth.css';
+@import 'components/sidebar.css';
+@import 'components/cards.css';
+@import 'components/tables.css';
+@import 'components/forms.css';
+@import 'components/buttons.css';
+
+/* Page Styles */
+@import 'pages/dashboard.css';
+@import 'pages/trade.css';
+@import 'pages/portfolio.css';
+@import 'pages/leaderboard.css';
+@import 'pages/backtest.css';
+@import 'pages/profile.css';

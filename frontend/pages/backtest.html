@@ -1,0 +1,237 @@
+<!-- Backtest Page -->
+<div x-show="currentPage === 'backtest'" class="page backtest-page">
+  <header class="page-header">
+    <h1>Strategy Backtester</h1>
+    <p class="page-subtitle">
+      Test your trading strategies with historical data
+    </p>
+  </header>
+
+  <div class="backtest-layout">
+    <!-- Left Panel: Configuration -->
+    <div class="backtest-config card">
+      <h3>Configuration</h3>
+
+      <div class="form-group">
+        <label>Symbols (comma-separated)</label>
+        <input
+          type="text"
+          x-model="backtestSymbols"
+          placeholder="AAPL, MSFT, GOOGL"
+          class="form-input"
+        />
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label>Timeframe</label>
+          <select x-model="backtestTimeframe" class="form-select">
+            <option value="1d">1 Day</option>
+            <option value="5d">5 Days</option>
+            <option value="1mo">1 Month</option>
+            <option value="3mo" selected>3 Months</option>
+            <option value="6mo">6 Months</option>
+            <option value="1y">1 Year</option>
+            <option value="2y">2 Years</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label>Interval</label>
+          <select x-model="backtestInterval" class="form-select">
+            <option value="5m">5 Minutes</option>
+            <option value="15m">15 Minutes</option>
+            <option value="1h">1 Hour</option>
+            <option value="1d" selected>1 Day</option>
+            <option value="1wk">1 Week</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label>Strategy Template</label>
+        <select x-model="selectedTemplate" class="form-select">
+          <option value="">Select a template...</option>
+          <template x-for="template in strategyTemplates" :key="template.name">
+            <option :value="template.name" x-text="template.name"></option>
+          </template>
+        </select>
+      </div>
+
+      <button
+        @click="runBacktest()"
+        class="btn btn-primary btn-block"
+        :disabled="backtestRunning"
+      >
+        <span x-show="!backtestRunning">Run Backtest</span>
+        <span x-show="backtestRunning">Running...</span>
+      </button>
+    </div>
+
+    <!-- Center Panel: Code Editor -->
+    <div class="backtest-editor card">
+      <div class="editor-header">
+        <h3>Strategy Code (Python)</h3>
+        <div class="editor-actions">
+          <a
+            href="#"
+            @click.prevent="navigateTo('docs')"
+            class="btn btn-sm btn-outline"
+            >View API Docs</a
+          >
+        </div>
+      </div>
+
+      <div id="backtest-code-editor" class="code-editor">
+        <textarea
+          x-model="backtestCode"
+          class="code-textarea"
+          placeholder="# Write your trading strategy here...
+# Available functions:
+#   get_ohlcv(symbol) - Get price data
+#   get_sma(symbol, period) - Get SMA
+#   get_rsi(symbol, period) - Get RSI
+#   buy(symbol, quantity) - Buy shares
+#   sell(symbol, quantity) - Sell shares
+#   get_position(symbol) - Get current position
+#   get_cash() - Get available cash
+
+data = get_ohlcv('AAPL')
+for i in range(20, len(data)):
+    # Your strategy logic here
+    pass"
+        ></textarea>
+      </div>
+    </div>
+
+    <!-- Right Panel: Results -->
+    <div class="backtest-results card">
+      <h3>Results</h3>
+
+      <div x-show="!backtestResult" class="no-results">
+        <p>Run a backtest to see results</p>
+      </div>
+
+      <div x-show="backtestResult" class="results-content">
+        <div class="result-metrics">
+          <div
+            class="metric"
+            :class="{ positive: backtestResult?.return_percent > 0, negative: backtestResult?.return_percent < 0 }"
+          >
+            <span class="metric-label">Total Return</span>
+            <span
+              class="metric-value"
+              x-text="(backtestResult?.return_percent || 0).toFixed(2) + '%'"
+            ></span>
+          </div>
+          <!-- Portfolio Value removed as Net Profit is clearer -->
+          <!-- Cash removed -->
+          <div class="metric">
+            <span class="metric-label">Total Trades</span>
+            <span
+              class="metric-value"
+              x-text="backtestResult?.total_trades || 0"
+            ></span>
+          </div>
+          <div class="metric">
+            <span class="metric-label">Win Rate</span>
+            <span
+              class="metric-value"
+              x-text="(backtestResult?.metrics?.win_rate || backtestResult?.win_rate || 0).toFixed(1) + '%'"
+            ></span>
+          </div>
+          <div class="metric">
+            <span class="metric-label">Profit Factor</span>
+            <span
+              class="metric-value"
+              x-text="backtestResult?.metrics?.profit_factor || '0.00'"
+            ></span>
+          </div>
+          <div class="metric">
+            <span class="metric-label">Max Drawdown</span>
+            <span
+              class="metric-value"
+              style="color: #ff4d4d"
+              x-text="(backtestResult?.metrics?.max_drawdown || 0).toFixed(2) + '%'"
+            ></span>
+          </div>
+          <div class="metric">
+            <span class="metric-label">Invested Capital</span>
+            <span
+              class="metric-value"
+              x-text="formatCurrency(backtestResult?.metrics?.max_exposure || 0, backtestResult?.currency)"
+            ></span>
+          </div>
+          <div class="metric">
+            <span class="metric-label">Net Profit</span>
+            <span
+              class="metric-value"
+              :class="{ positive: backtestResult?.total_return > 0, negative: backtestResult?.total_return < 0 }"
+              x-text="formatCurrency(backtestResult?.total_return || 0, backtestResult?.currency)"
+            ></span>
+          </div>
+          <div class="metric">
+            <span class="metric-label">ROI on Invested</span>
+            <span
+              class="metric-value"
+              x-text="(backtestResult?.metrics?.return_on_exposure || 0).toFixed(2) + '%'"
+            ></span>
+          </div>
+        </div>
+
+        <div
+          x-show="backtestResult?.debug"
+          class="result-debug"
+          style="
+            margin-top: 1rem;
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+            padding-top: 0.5rem;
+            font-size: 0.8rem;
+            opacity: 0.7;
+          "
+        >
+          <p>
+            <strong>Analysis:</strong>
+            <span
+              x-text="backtestResult?.debug?.analyzed_symbols?.join(', ')"
+            ></span>
+          </p>
+          <p>
+            <strong>Data Points:</strong>
+            <span
+              x-text="Object.entries(backtestResult?.debug?.data_counts || {}).map(([s,c]) => `${s}: ${c} candles`).join(', ')"
+            ></span>
+          </p>
+        </div>
+
+        <div x-show="backtestResult?.error" class="result-error">
+          <h4>Error</h4>
+          <pre x-text="backtestResult?.error"></pre>
+        </div>
+
+        <div x-show="backtestResult?.trades?.length > 0" class="result-trades">
+          <h4>Recent Trades</h4>
+          <div class="trades-list">
+            <template
+              x-for="trade in (backtestResult?.trades || []).slice(-10)"
+              :key="trade.symbol + trade.type + trade.price"
+            >
+              <div class="trade-item" :class="trade.type.toLowerCase()">
+                <span class="trade-type" x-text="trade.type"></span>
+                <span class="trade-symbol" x-text="trade.symbol"></span>
+                <span
+                  class="trade-qty"
+                  x-text="trade.quantity + ' shares'"
+                ></span>
+                <span
+                  class="trade-price"
+                  x-text="'@ ' + formatCurrency(trade.price, backtestResult?.currency)"
+                ></span>
+              </div>
+            </template>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>

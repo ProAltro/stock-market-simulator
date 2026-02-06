@@ -9,18 +9,19 @@ datasource db {
 
 // User authentication
 model User {
-  id                String          @id @default(uuid())
-  email             String          @unique
-  passwordHash      String          @map("password_hash")
-  displayName       String?         @map("display_name")
-  isPublic          Boolean         @default(true) @map("is_public")
-  currency          String          @default("USD")
-  showOnLeaderboard Boolean         @default(false) @map("show_on_leaderboard")
-  activeMode        AccountMode     @default(STANDARD) @map("active_mode")
-  createdAt         DateTime        @default(now()) @map("created_at")
-  updatedAt         DateTime        @updatedAt @map("updated_at")
-  accounts          Account[]
-  oauthProviders    OAuthProvider[]
+  id                   String               @id @default(uuid())
+  email                String               @unique
+  passwordHash         String               @map("password_hash")
+  displayName          String?              @map("display_name")
+  isPublic             Boolean              @default(true) @map("is_public")
+  currency             String               @default("USD")
+  showOnLeaderboard    Boolean              @default(false) @map("show_on_leaderboard")
+  activeMode           AccountMode          @default(STANDARD) @map("active_mode")
+  createdAt            DateTime             @default(now()) @map("created_at")
+  updatedAt            DateTime             @updatedAt @map("updated_at")
+  accounts             Account[]
+  oauthProviders       OAuthProvider[]
+  backtestSubmissions  BacktestSubmission[]
 
   @@map("users")
 }
@@ -44,6 +45,7 @@ model Account {
   userId         String      @map("user_id")
   name           String      @default("Default")
   mode           AccountMode @default(STANDARD)
+  baseCurrency   String      @default("USD") @map("base_currency")
   cashBalance    Decimal     @default(100000) @map("cash_balance") @db.Decimal(20, 4)
   initialBalance Decimal     @default(100000) @map("initial_balance") @db.Decimal(20, 4)
   marginBalance  Decimal     @default(0) @map("margin_balance") @db.Decimal(20, 4)
@@ -67,6 +69,7 @@ model Instrument {
   symbol           String         @unique
   name             String
   type             InstrumentType
+  currency         String         @default("USD")
   underlyingSymbol String?        @map("underlying_symbol")
   expiryDate       DateTime?      @map("expiry_date")
   strikePrice      Decimal?       @map("strike_price") @db.Decimal(20, 4)
@@ -99,6 +102,8 @@ model Position {
   instrumentId String     @map("instrument_id")
   quantity     Decimal    @db.Decimal(20, 4)
   avgPrice     Decimal    @map("avg_price") @db.Decimal(20, 4)
+  avgPriceBase Decimal?   @map("avg_price_base") @db.Decimal(20, 4)
+  currency     String     @default("USD")
   direction    Direction
   createdAt    DateTime   @default(now()) @map("created_at")
   updatedAt    DateTime   @updatedAt @map("updated_at")
@@ -126,6 +131,8 @@ model Order {
   status       OrderStatus @default(PENDING)
   filledQty    Decimal     @default(0) @map("filled_qty") @db.Decimal(20, 4)
   avgFillPrice Decimal?    @map("avg_fill_price") @db.Decimal(20, 4)
+  currency     String      @default("USD")
+  exchangeRate Decimal     @default(1) @map("exchange_rate") @db.Decimal(20, 8)
   createdAt    DateTime    @default(now()) @map("created_at")
   updatedAt    DateTime    @updatedAt @map("updated_at")
   account      Account     @relation(fields: [accountId], references: [id], onDelete: Cascade)
@@ -159,8 +166,27 @@ model Trade {
   orderId        String   @map("order_id")
   executionPrice Decimal  @map("execution_price") @db.Decimal(20, 4)
   quantity       Decimal  @db.Decimal(20, 4)
+  currency       String   @default("USD")
+  exchangeRate   Decimal  @default(1) @map("exchange_rate") @db.Decimal(20, 8)
   createdAt      DateTime @default(now()) @map("created_at")
   order          Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
 
   @@map("trades")
 }
+
+// Backtest submissions for algo trading
+model BacktestSubmission {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  symbols   String   // Comma-separated list of symbols
+  timeframe String   // e.g., "3mo", "1y"
+  interval  String   // e.g., "1d", "1h"
+  code      String   @db.Text
+  status    String   @default("pending") // pending, running, completed, failed
+  result    Json?    // Backtest results as JSON
+  createdAt DateTime @default(now()) @map("created_at")
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("backtest_submissions")
+}
+

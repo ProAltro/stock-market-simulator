@@ -1,0 +1,77 @@
+<div x-show="currentPage === 'docs'" class="page docs-page">
+  <header class="page-header">
+    <h1>Judge0 API Documentation</h1>
+    <p class="page-subtitle">Reference for creating trading strategies in Python</p>
+    <button @click="navigateTo('backtest')" class="btn btn-secondary">Back to Backtest</button>
+  </header>
+
+  <div class="docs-content card">
+    <h3>Data Access Functions</h3>
+    <div class="api-function">
+      <code>get_ohlcv(symbol, timeframe=None, start_date=None, end_date=None)</code>
+      <p>Get OHLCV data array for a symbol. Returns a list of dictionaries with keys: <code>time</code>, <code>open</code>, <code>high</code>, <code>low</code>, <code>close</code>, <code>volume</code>.</p>
+    </div>
+
+    <h3>Technical Indicators</h3>
+    <div class="api-function">
+      <code>get_sma(symbol, period)</code>
+      <p>Get Simple Moving Average (SMA) for the specified period.</p>
+    </div>
+    <div class="api-function">
+      <code>get_ema(symbol, period)</code>
+      <p>Get Exponential Moving Average (EMA) for the specified period.</p>
+    </div>
+    <div class="api-function">
+      <code>get_rsi(symbol, period=14)</code>
+      <p>Get Relative Strength Index (RSI). Returns values between 0 and 100.</p>
+    </div>
+    <div class="api-function">
+      <code>get_macd(symbol)</code>
+      <p>Get MACD (Moving Average Convergence Divergence). Returns a dict with <code>macd</code>, <code>signal</code>, and <code>histogram</code> arrays.</p>
+    </div>
+    <div class="api-function">
+      <code>get_bollinger(symbol, period=20, std=2)</code>
+      <p>Get Bollinger Bands. Returns a dict with <code>upper</code>, <code>middle</code>, <code>lower</code>, <code>percentB</code>, and <code>bandwidth</code> arrays.</p>
+    </div>
+    <div class="api-function">
+      <code>get_atr(symbol, period=14)</code>
+      <p>Get Average True Range (ATR) for volatility measurement.</p>
+    </div>
+    <div class="api-function">
+      <code>get_stochastic(symbol, k_period=14, d_period=3)</code>
+      <p>Get Stochastic Oscillator. Returns a dict with <code>k</code> and <code>d</code> arrays.</p>
+    </div>
+    <div class="api-function">
+      <code>get_adx(symbol, period=14)</code>
+      <p>Get Average Directional Index (ADX). Returns a dict with <code>adx</code>, <code>plusDI</code>, and <code>minusDI</code>.</p>
+    </div>
+    
+    <h3>Trading Functions</h3>
+    <div class="api-function">
+      <code>buy(symbol, quantity, price=None)</code>
+      <p>Buy shares of a symbol. If price is not specified, uses the current close price.</p>
+    </div>
+    <div class="api-function">
+      <code>sell(symbol, quantity, price=None)</code>
+      <p>Sell shares of a symbol. If price is not specified, uses the current close price.</p>
+    </div>
+    
+    <h3>Account & Position Info</h3>
+    <div class="api-function">
+      <code>get_cash()</code>
+      <p>Get current available cash balance.</p>
+    </div>
+    <div class="api-function">
+      <code>get_positions()</code>
+      <p>Get dictionary of all current positions {symbol: quantity}.</p>
+    </div>
+    <div class="api-function">
+      <code>get_position(symbol)</code>
+      <p>Get current quantity held for a specific symbol. Returns 0 if no position.</p>
+    </div>
+    <div class="api-function">
+      <code>get_price(symbol)</code>
+      <p>Get the latest known price for a symbol.</p>
+    </div>
+  </div>
+</div>

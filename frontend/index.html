@@ -18,828 +18,162 @@
     />
 
     <!-- Styles -->
-    <link rel="stylesheet" href="assets/styles.css" />
+    <link rel="stylesheet" href="/assets/styles.css" />
 
-
-
-    <!-- TradingView Lightweight Charts (Keep for legacy support) -->
+    <!-- TradingView Lightweight Charts -->
     <script src="https://unpkg.com/lightweight-charts/dist/lightweight-charts.standalone.production.js"></script>
-
-    <!-- App Scripts -->
-    <script type="module" src="assets/js/main.js"></script>
-
-    <!-- Alpine.js -->
-    <script
-      defer
-      src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js"
-    ></script>
   </head>
-  <body x-data="app()" x-init="init()">
-    <!-- Loading Screen -->
-    <div x-show="loading" x-transition class="loading-screen">
+  <body>
+    <!-- Initial Loading Screen (before templates load) -->
+    <div id="initial-loader" class="loading-screen">
       <div class="loader">
         <div class="loader-ring"></div>
         <span>Loading Decrypt...</span>
       </div>
     </div>
 
-    <!-- Auth Modal -->
-    <div x-show="!user && !loading" x-transition class="auth-overlay">
-      <div class="auth-modal">
-        <div class="auth-header">
-          <div class="logo">
-            <span class="logo-icon">₿</span>
-            <span class="logo-text">Decrypt</span>
-          </div>
-          <p class="auth-subtitle">Paper Trading Platform</p>
-        </div>
+    <!-- App Root - Templates injected here, then Alpine initializes -->
+    <div id="app-root" style="display: none">
+      <!-- Auth Container - Loaded from components/auth-modal.html -->
+      <div id="auth-container"></div>
 
-        <div class="auth-tabs">
-          <button
-            @click="authMode = 'login'"
-            :class="{ active: authMode === 'login' }"
-          >
-            Login
-          </button>
-          <button
-            @click="authMode = 'register'"
-            :class="{ active: authMode === 'register' }"
-          >
-            Register
-          </button>
-        </div>
+      <!-- Main App -->
+      <div x-show="user" x-transition class="app-container">
+        <!-- Sidebar Container - Loaded from components/sidebar.html -->
+        <div id="sidebar-container"></div>
 
-        <form
-          @submit.prevent="authMode === 'login' ? login() : register()"
-          class="auth-form"
+        <!-- Mobile hamburger & overlay -->
+        <button
+          class="mobile-menu-btn"
+          @click="sidebarOpen = !sidebarOpen"
+          x-show="user"
         >
-          <div class="form-group" x-show="authMode === 'register'">
-            <label for="displayName">Display Name</label>
-            <input
-              type="text"
-              id="displayName"
-              x-model="authForm.displayName"
-              :required="authMode === 'register'"
-              placeholder="Your name"
-            />
-          </div>
-          <div class="form-group">
-            <label for="email">Email</label>
-            <input
-              type="email"
-              id="email"
-              x-model="authForm.email"
-              required
-              placeholder="you@example.com"
-            />
-          </div>
-          <div class="form-group">
-            <label for="password">Password</label>
-            <input
-              type="password"
-              id="password"
-              x-model="authForm.password"
-              required
-              placeholder="••••••••"
-              minlength="6"
-            />
-          </div>
-          <p x-show="authError" class="error-message" x-text="authError"></p>
-          <button type="submit" class="btn-primary" :disabled="authLoading">
-            <span
-              x-show="!authLoading"
-              x-text="authMode === 'login' ? 'Sign In' : 'Create Account'"
-            ></span>
-            <span x-show="authLoading">Loading...</span>
-          </button>
-        </form>
+          &#9776;
+        </button>
+        <div
+          class="sidebar-overlay"
+          :class="{ active: sidebarOpen }"
+          @click="sidebarOpen = false"
+        ></div>
 
-        <p class="auth-footer">
-          Start with $100,000 virtual cash • Risk-free trading
-        </p>
+        <!-- Main Content -->
+        <main class="main-content">
+          <!-- Pages Container - All pages loaded here -->
+          <div id="pages-container"></div>
+        </main>
       </div>
     </div>
 
-    <!-- Main App -->
-    <div x-show="user" x-transition class="app-container">
-      <!-- Sidebar -->
-      <aside class="sidebar">
-        <div class="sidebar-header">
-          <div class="logo">
-            <span class="logo-icon">₿</span>
-            <span class="logo-text">Decrypt</span>
-          </div>
-        </div>
+    <!-- App core logic - must load first to define app() function -->
+    <!-- App core logic - must load first to define app() function -->
+    <script type="module" id="main-script"></script>
+    <script>
+      document.getElementById("main-script").src =
+        "/assets/js/main.js?v=" + Date.now();
+    </script>
 
-        <nav class="sidebar-nav">
-          <a
-            href="#"
-            @click.prevent="currentPage = 'dashboard'"
-            :class="{ active: currentPage === 'dashboard' }"
-          >
-            <svg
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2"
-            >
-              <rect x="3" y="3" width="7" height="7" />
-              <rect x="14" y="3" width="7" height="7" />
-              <rect x="14" y="14" width="7" height="7" />
-              <rect x="3" y="14" width="7" height="7" />
-            </svg>
-            Dashboard
-          </a>
-          <a
-            href="#"
-            @click.prevent="currentPage = 'trade'"
-            :class="{ active: currentPage === 'trade' }"
-          >
-            <svg
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2"
-            >
-              <polyline points="22,7 13.5,15.5 8.5,10.5 2,17" />
-              <polyline points="16,7 22,7 22,13" />
-            </svg>
-            Trade
-          </a>
-          <a
-            href="#"
-            @click.prevent="currentPage = 'portfolio'"
-            :class="{ active: currentPage === 'portfolio' }"
-          >
-            <svg
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2"
-            >
-              <path
-                d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"
-              />
-            </svg>
-            Portfolio
-          </a>
-          <a
-            href="#"
-            @click.prevent="currentPage = 'leaderboard'"
-            :class="{ active: currentPage === 'leaderboard' }"
-          >
-            <svg
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2"
-            >
-              <path
-                d="M8 21h8m-4-4v4m4-12a4 4 0 1 1-8 0V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v4z"
-              />
-            </svg>
-            Leaderboard
-          </a>
-          <a
-            href="#"
-            @click.prevent="currentPage = 'profile'; fetchProfile()"
-            :class="{ active: currentPage === 'profile' }"
-          >
-            <svg
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2"
-            >
-              <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
-              <circle cx="12" cy="7" r="4" />
-            </svg>
-            Profile
-          </a>
-        </nav>
+    <!-- App Initialization Script -->
+    <script type="module">
+      // Load templates first, then Alpine.js
+      async function loadTemplate(path, targetSelector, position = "replace") {
+        try {
+          const response = await fetch(`${path}?refresh=${Date.now()}`);
+          if (!response.ok) {
+            console.error(`Failed to load template: ${path}`);
+            return false;
+          }
 
-        <div class="sidebar-footer">
-          <div class="user-info">
-            <span class="user-email" x-text="user?.email"></span>
-            <button @click="logout()" class="btn-logout">Logout</button>
-          </div>
-        </div>
-      </aside>
+          const html = await response.text();
+          const target = document.querySelector(targetSelector);
 
-      <!-- Main Content -->
-      <main class="main-content">
-        <!-- Dashboard Page -->
-        <div x-show="currentPage === 'dashboard'" class="page dashboard-page">
-          <header class="page-header">
-            <h1>Dashboard</h1>
-            <p
-              class="date"
-              x-text="new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })"
-            ></p>
-          </header>
+          if (!target) {
+            console.error(`Target element not found: ${targetSelector}`);
+            return false;
+          }
 
-          <!-- Portfolio Summary Cards -->
-          <div class="stats-grid">
-            <div class="stat-card primary">
-              <span class="stat-label">Total Value</span>
-              <span
-                class="stat-value"
-                x-text="formatCurrency(portfolio?.totalValue || 0)"
-              ></span>
-              <span
-                class="stat-change"
-                :class="{ positive: portfolio?.totalReturn >= 0, negative: portfolio?.totalReturn < 0 }"
-              >
-                <span
-                  x-text="(portfolio?.totalReturn >= 0 ? '+' : '') + formatCurrency(portfolio?.totalReturn || 0)"
-                ></span>
-                (<span
-                  x-text="formatPercent(portfolio?.totalReturnPercent || 0)"
-                ></span
-                >)
-              </span>
+          switch (position) {
+            case "append":
+              target.insertAdjacentHTML("beforeend", html);
+              break;
+            case "prepend":
+              target.insertAdjacentHTML("afterbegin", html);
+              break;
+            case "replace":
+            default:
+              target.innerHTML = html;
+              break;
+          }
+
+          return true;
+        } catch (error) {
+          console.error(`Error loading template ${path}:`, error);
+          return false;
+        }
+      }
+
+      async function initApp() {
+        try {
+          // Load auth modal
+          await loadTemplate(
+            "/components/auth-modal.html",
+            "#auth-container",
+            "replace",
+          );
+
+          // Load sidebar
+          await loadTemplate(
+            "/components/sidebar.html",
+            "#sidebar-container",
+            "replace",
+          );
+
+          // Load all pages
+          const pages = [
+            "/pages/dashboard.html",
+            "/pages/trade.html",
+            "/pages/portfolio.html",
+            "/pages/leaderboard.html",
+            "/pages/backtest.html",
+            "/pages/profile.html",
+            "/pages/docs.html",
+          ];
+
+          for (const page of pages) {
+            await loadTemplate(page, "#pages-container", "append");
+          }
+
+          console.log("Templates loaded successfully");
+
+          // Add Alpine.js x-data to app root
+          const appRoot = document.getElementById("app-root");
+          appRoot.setAttribute("x-data", "app()");
+          appRoot.setAttribute("x-init", "init()");
+
+          // Hide initial loader, show app
+          document.getElementById("initial-loader").style.display = "none";
+          appRoot.style.display = "block";
+
+          // Now load Alpine.js
+          const alpineScript = document.createElement("script");
+          alpineScript.src = "https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js";
+          alpineScript.defer = true;
+          document.head.appendChild(alpineScript);
+        } catch (error) {
+          console.error("Failed to initialize app:", error);
+          document.getElementById("initial-loader").innerHTML = `
+            <div class="loader">
+              <span style="color: red;">Failed to load application. Please refresh the page.</span>
             </div>
-            <div class="stat-card">
-              <span class="stat-label">Cash Balance</span>
-              <span
-                class="stat-value"
-                x-text="formatCurrency(portfolio?.cashBalance || 0)"
-              ></span>
-            </div>
-            <div class="stat-card">
-              <span class="stat-label">Positions Value</span>
-              <span
-                class="stat-value"
-                x-text="formatCurrency(portfolio?.positionsValue || 0)"
-              ></span>
-            </div>
-            <div class="stat-card">
-              <span class="stat-label">Positions</span>
-              <span
-                class="stat-value"
-                x-text="portfolio?.positions?.length || 0"
-              ></span>
-            </div>
-          </div>
+          `;
+        }
+      }
 
-          <!-- Watchlist & Positions -->
-          <div class="dashboard-grid">
-            <section class="card watchlist-card">
-              <h2>Market Watchlist</h2>
-              <div class="watchlist">
-                <template x-for="stock in watchlist" :key="stock.symbol">
-                  <div
-                    class="watchlist-item"
-                    @click="selectSymbol(stock.symbol); currentPage = 'trade'"
-                  >
-                    <div class="stock-info">
-                      <span class="stock-symbol" x-text="stock.symbol"></span>
-                      <span class="stock-name" x-text="stock.name"></span>
-                    </div>
-                    <div class="stock-price">
-                      <span
-                        class="price"
-                        x-text="formatCurrency(stock.price, stock.currency)"
-                      ></span>
-                      <span
-                        class="change"
-                        :class="{ positive: stock.change >= 0, negative: stock.change < 0 }"
-                        x-text="formatPercent(stock.changePercent)"
-                      ></span>
-                    </div>
-                  </div>
-                </template>
-              </div>
-            </section>
-
-            <section class="card positions-card">
-              <h2>Current Positions</h2>
-              <div
-                class="positions-list"
-                x-show="portfolio?.positions?.length > 0"
-              >
-                <template x-for="pos in portfolio?.positions" :key="pos.id">
-                  <div class="position-item">
-                    <div class="position-info">
-                      <span
-                        class="symbol"
-                        x-text="pos.instrument?.symbol || pos.symbol"
-                      ></span>
-                      <span
-                        class="qty"
-                        x-text="pos.quantity + ' shares'"
-                      ></span>
-                    </div>
-                    <div class="position-value">
-                      <span
-                        class="value"
-                        x-text="formatCurrency(pos.marketValue)"
-                      ></span>
-                      <span
-                        class="pnl"
-                        :class="{ positive: pos.unrealizedPnL >= 0, negative: pos.unrealizedPnL < 0 }"
-                        x-text="(pos.unrealizedPnL >= 0 ? '+' : '') + formatCurrency(pos.unrealizedPnL)"
-                      ></span>
-                    </div>
-                  </div>
-                </template>
-              </div>
-              <p x-show="!portfolio?.positions?.length" class="empty-state">
-                No positions yet. Start trading!
-              </p>
-            </section>
-          </div>
-        </div>
-
-        <!-- Trade Page -->
-        <div x-show="currentPage === 'trade'" class="page trade-page">
-          <header class="page-header">
-            <h1>Trade</h1>
-            <div class="search-controls">
-              <div class="symbol-search">
-                <input
-                  type="text"
-                  placeholder="Search symbol or company..."
-                  x-model="searchQuery"
-                  @input="searchInstruments()"
-                />
-                <div x-show="searchResults.length > 0" class="search-dropdown">
-                  <template x-for="result in searchResults" :key="result.symbol">
-                    <div
-                      class="search-result"
-                      @click="selectSymbol(result.symbol)"
-                    >
-                      <span class="symbol" x-text="result.symbol"></span>
-                      <span class="name" x-text="result.name"></span>
-                      <span class="exchange" x-text="result.exchange"></span>
-                    </div>
-                  </template>
-                </div>
-              </div>
-              <select x-model="selectedExchange" @change="searchInstruments()" class="exchange-select">
-                <option value="">ALL EXCHANGES</option>
-                <option value="NYSE">NYSE</option>
-                <option value="NASDAQ">NASDAQ</option>
-                <option value="NSE">NSE (India)</option>
-                <option value="BSE">BSE (India)</option>
-              </select>
-            </div>
-          </header>
-
-          <div class="trade-layout">
-            <!-- Chart Area -->
-            <div class="chart-area">
-              <div class="chart-header">
-                <div class="symbol-info">
-                  <h2 x-text="selectedSymbol || 'Select a Symbol'"></h2>
-                  <span
-                    class="price-large"
-                    x-text="formatCurrency(currentQuote?.price || 0, currentQuote?.currency)"
-                  ></span>
-                  <span
-                    class="change-badge"
-                    :class="{ positive: currentQuote?.change >= 0, negative: currentQuote?.change < 0 }"
-                  >
-                    <span
-                      x-text="formatPercent(currentQuote?.changePercent || 0)"
-                    ></span>
-                  </span>
-                </div>
-                <div class="chart-controls">
-                  <select 
-                    class="interval-select" 
-                    x-model="manualInterval" 
-                    @change="loadChart()"
-                  >
-                    <option value="">Auto</option>
-                    <option value="5m">5m</option>
-                    <option value="15m">15m</option>
-                    <option value="30m">30m</option>
-                    <option value="1h">1h</option>
-                    <option value="1d">1D</option>
-                  </select>
-                  <div class="timeframe-btns">
-                    <button 
-                      :class="{ active: chartTimeframe === '1d' }" 
-                      @click="chartTimeframe = '1d'; loadChart()">1D</button>
-                    <button 
-                      :class="{ active: chartTimeframe === '1w' }" 
-                      @click="chartTimeframe = '1w'; loadChart()">1W</button>
-                    <button 
-                      :class="{ active: chartTimeframe === '1m' }" 
-                      @click="chartTimeframe = '1m'; loadChart()">1M</button>
-                    <button 
-                      :class="{ active: chartTimeframe === '3m' }" 
-                      @click="chartTimeframe = '3m'; loadChart()">3M</button>
-                    <button 
-                      :class="{ active: chartTimeframe === '1y' }" 
-                      @click="chartTimeframe = '1y'; loadChart()">1Y</button>
-                  </div>
-                  <div class="chart-type-btns">
-                    <button 
-                      :class="{ active: chartType === 'candle' }" 
-                      @click="chartType = 'candle'; loadChart()"
-                      title="Candlestick">
-                      &#9632;
-                    </button>
-                    <button 
-                      :class="{ active: chartType === 'line' }" 
-                      @click="chartType = 'line'; loadChart()"
-                      title="Line">
-                      &#8212;
-                    </button>
-                  </div>
-                </div>
-              </div>
-              <div id="chart-container" class="chart-container"></div>
-            </div>
-
-            <!-- Order Panel -->
-            <div class="order-panel">
-              <h3>Place Order</h3>
-
-              <div class="order-type-tabs">
-                <button
-                  @click="orderForm.side = 'BUY'"
-                  :class="{ active: orderForm.side === 'BUY', buy: true }"
-                >
-                  Buy
-                </button>
-                <button
-                  @click="orderForm.side = 'SELL'"
-                  :class="{ active: orderForm.side === 'SELL', sell: true }"
-                >
-                  Sell
-                </button>
-              </div>
-
-              <form @submit.prevent="placeOrder()" class="order-form">
-                <div class="form-group">
-                  <label>Symbol</label>
-                  <input type="text" x-model="selectedSymbol" readonly />
-                </div>
-                <div class="form-group">
-                  <label>Quantity</label>
-                  <input
-                    type="number"
-                    x-model="orderForm.quantity"
-                    min="1"
-                    step="1"
-                    required
-                  />
-                </div>
-                <div class="form-group">
-                  <label>Order Type</label>
-                  <select x-model="orderForm.orderType">
-                    <option value="MARKET">Market</option>
-                    <option value="LIMIT">Limit</option>
-                  </select>
-                </div>
-                <div
-                  class="form-group"
-                  x-show="orderForm.orderType === 'LIMIT'"
-                >
-                  <label>Limit Price</label>
-                  <input
-                    type="number"
-                    x-model="orderForm.limitPrice"
-                    step="0.01"
-                  />
-                </div>
-
-                <div class="order-summary">
-                  <div class="summary-row">
-                    <span>Est. Total</span>
-                    <span
-                      x-text="formatCurrency((currentQuote?.price || 0) * (orderForm.quantity || 0), currentQuote?.currency)"
-                    ></span>
-                  </div>
-                  <div class="summary-row">
-                    <span>Available</span>
-                    <span
-                      x-text="formatCurrency(portfolio?.cashBalance || 0)"
-                    ></span>
-                  </div>
-                </div>
-
-                <p
-                  x-show="orderError"
-                  class="error-message"
-                  x-text="orderError"
-                ></p>
-                <p
-                  x-show="orderSuccess"
-                  class="success-message"
-                  x-text="orderSuccess"
-                ></p>
-
-                <button
-                  type="submit"
-                  class="btn-order"
-                  :class="{ buy: orderForm.side === 'BUY', sell: orderForm.side === 'SELL' }"
-                  :disabled="!selectedSymbol || orderLoading"
-                >
-                  <span
-                    x-show="!orderLoading"
-                    x-text="orderForm.side + ' ' + selectedSymbol"
-                  ></span>
-                  <span x-show="orderLoading">Processing...</span>
-                </button>
-              </form>
-            </div>
-          </div>
-
-          <!-- Order History -->
-          <section class="order-history">
-            <h3>Recent Orders</h3>
-            <table class="data-table">
-              <thead>
-                <tr>
-                  <th>Time</th>
-                  <th>Symbol</th>
-                  <th>Side</th>
-                  <th>Qty</th>
-                  <th>Price</th>
-                  <th>Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                <template x-for="order in orders.slice(0, 10)" :key="order.id">
-                  <tr>
-                    <td
-                      x-text="new Date(order.createdAt).toLocaleString()"
-                    ></td>
-                    <td x-text="order.instrument?.symbol"></td>
-                    <td
-                      :class="{ 'text-green': order.side === 'BUY', 'text-red': order.side === 'SELL' }"
-                      x-text="order.side"
-                    ></td>
-                    <td x-text="order.quantity"></td>
-                    <td x-text="formatCurrency(order.avgFillPrice)"></td>
-                    <td>
-                      <span
-                        class="status-badge"
-                        :class="order.status.toLowerCase()"
-                        x-text="order.status"
-                      ></span>
-                    </td>
-                  </tr>
-                </template>
-              </tbody>
-            </table>
-          </section>
-        </div>
-
-        <!-- Portfolio Page -->
-        <div x-show="currentPage === 'portfolio'" class="page portfolio-page">
-          <header class="page-header">
-            <h1>Portfolio</h1>
-          </header>
-
-          <div class="portfolio-summary">
-            <div class="stat-card large primary">
-              <span class="stat-label">Net Worth</span>
-              <span
-                class="stat-value big"
-                x-text="formatCurrency(portfolio?.totalValue || 0)"
-              ></span>
-              <div class="stat-details">
-                <span>Starting: $100,000</span>
-                <span
-                  :class="{ positive: portfolio?.totalReturn >= 0, negative: portfolio?.totalReturn < 0 }"
-                >
-                  P&L:
-                  <span
-                    x-text="(portfolio?.totalReturn >= 0 ? '+' : '') + formatCurrency(portfolio?.totalReturn || 0)"
-                  ></span>
-                </span>
-              </div>
-            </div>
-          </div>
-
-          <section class="card">
-            <h2>Holdings</h2>
-            <table class="data-table" x-show="portfolio?.positions?.length > 0">
-              <thead>
-                <tr>
-                  <th>Symbol</th>
-                  <th>Quantity</th>
-                  <th>Avg Price</th>
-                  <th>Current</th>
-                  <th>Market Value</th>
-                  <th>P&L</th>
-                  <th>% Change</th>
-                </tr>
-              </thead>
-              <tbody>
-                <template x-for="pos in portfolio?.positions" :key="pos.id">
-                  <tr>
-                    <td>
-                      <strong
-                        x-text="pos.instrument?.symbol || pos.symbol"
-                      ></strong>
-                    </td>
-                    <td x-text="pos.quantity"></td>
-                    <td x-text="formatCurrency(pos.avgPrice)"></td>
-                    <td x-text="formatCurrency(pos.currentPrice)"></td>
-                    <td x-text="formatCurrency(pos.marketValue)"></td>
-                    <td
-                      :class="{ positive: pos.unrealizedPnL >= 0, negative: pos.unrealizedPnL < 0 }"
-                      x-text="(pos.unrealizedPnL >= 0 ? '+' : '') + formatCurrency(pos.unrealizedPnL)"
-                    ></td>
-                    <td
-                      :class="{ positive: pos.unrealizedPnLPercent >= 0, negative: pos.unrealizedPnLPercent < 0 }"
-                      x-text="formatPercent(pos.unrealizedPnLPercent)"
-                    ></td>
-                  </tr>
-                </template>
-              </tbody>
-            </table>
-            <p x-show="!portfolio?.positions?.length" class="empty-state">
-              No holdings yet. Start trading to build your portfolio!
-            </p>
-          </section>
-        </div>
-
-        <!-- Leaderboard Page -->
-        <div
-          x-show="currentPage === 'leaderboard'"
-          class="page leaderboard-page"
-        >
-          <header class="page-header">
-            <h1>Leaderboard</h1>
-            <p>Top traders by return percentage</p>
-          </header>
-
-          <div class="leaderboard-container">
-            <div class="user-rank-card" x-show="myRank">
-              <span class="rank-label">Your Rank</span>
-              <span class="rank-value"
-                >#<span x-text="myRank?.rank"></span
-              ></span>
-              <span
-                class="rank-return"
-                :class="{ positive: myRank?.returnPercent >= 0, negative: myRank?.returnPercent < 0 }"
-                x-text="formatPercent(myRank?.returnPercent)"
-              ></span>
-            </div>
-
-            <table class="leaderboard-table">
-              <thead>
-                <tr>
-                  <th>Rank</th>
-                  <th>Trader</th>
-                  <th>Total Value</th>
-                  <th>Return</th>
-                </tr>
-              </thead>
-              <tbody>
-                <template x-for="entry in leaderboard" :key="entry.userId">
-                  <tr :class="{ highlight: entry.userId === user?.id }">
-                    <td class="rank-cell">
-                      <span
-                        class="rank-badge"
-                        :class="{ gold: entry.rank === 1, silver: entry.rank === 2, bronze: entry.rank === 3 }"
-                        x-text="entry.rank"
-                      ></span>
-                    </td>
-                    <td x-text="entry.displayName"></td>
-                    <td x-text="formatCurrency(entry.totalValue)"></td>
-                    <td
-                      :class="{ positive: entry.returnPercent >= 0, negative: entry.returnPercent < 0 }"
-                    >
-                      <span x-text="formatPercent(entry.returnPercent)"></span>
-                    </td>
-                  </tr>
-                </template>
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-        <!-- Profile Page -->
-        <div x-show="currentPage === 'profile'" class="page profile-page">
-          <header class="page-header">
-            <h1>Profile & Settings</h1>
-          </header>
-
-          <div class="profile-grid" x-show="profile">
-            <!-- Account Info -->
-            <section class="card">
-              <h2>ACCOUNT</h2>
-              <div class="profile-info">
-                <div class="info-row">
-                  <span class="label">EMAIL</span>
-                  <span x-text="profile?.email"></span>
-                </div>
-                <div class="info-row">
-                  <span class="label">DISPLAY NAME</span>
-                  <span x-text="profile?.displayName || 'Not set'"></span>
-                </div>
-                <div class="info-row">
-                  <span class="label">MODE</span>
-                  <span
-                    class="mode-badge"
-                    :class="profile?.accounts?.[0]?.mode?.toLowerCase()"
-                    x-text="profile?.accounts?.[0]?.mode"
-                  ></span>
-                </div>
-                <div class="info-row">
-                  <span class="label">BALANCE</span>
-                  <span x-text="formatCurrency(profile?.accounts?.[0]?.cashBalance)"></span>
-                </div>
-              </div>
-            </section>
-
-            <!-- Settings -->
-            <section class="card">
-              <h2>SETTINGS</h2>
-              <div class="settings-form">
-                <div class="form-group">
-                  <label>CURRENCY</label>
-                  <select
-                    x-model="profile.currency"
-                    @change="updateSettings({ currency: profile.currency })"
-                  >
-                    <option value="USD">USD ($)</option>
-                    <option value="INR">INR (₹)</option>
-                    <option value="EUR">EUR (€)</option>
-                    <option value="GBP">GBP (£)</option>
-                  </select>
-                </div>
-                <div class="form-group">
-                  <label>LEADERBOARD</label>
-                  <div class="toggle-row">
-                    <input
-                      type="checkbox"
-                      id="leaderboard-toggle"
-                      :checked="profile?.showOnLeaderboard"
-                      @change="updateSettings({ showOnLeaderboard: $event.target.checked })"
-                    />
-                    <label for="leaderboard-toggle">Show on leaderboard (requires RANKED mode)</label>
-                  </div>
-                </div>
-              </div>
-              <p x-show="settingsMessage" class="settings-message" x-text="settingsMessage"></p>
-            </section>
-
-            <!-- Trading Mode -->
-            <section class="card">
-              <h2>TRADING MODE</h2>
-              <div class="mode-selector">
-                <button
-                  class="mode-btn"
-                  :class="{ active: profile?.accounts?.[0]?.mode === 'STANDARD' }"
-                  @click="switchMode('STANDARD')"
-                  :disabled="profile?.accounts?.[0]?.mode === 'STANDARD'"
-                >
-                  STANDARD
-                  <span class="mode-desc">Practice freely, add funds anytime</span>
-                </button>
-                <button
-                  class="mode-btn"
-                  :class="{ active: profile?.accounts?.[0]?.mode === 'RANKED' }"
-                  @click="switchMode('RANKED')"
-                  :disabled="profile?.accounts?.[0]?.mode === 'RANKED'"
-                >
-                  RANKED
-                  <span class="mode-desc">$100k start, compete on leaderboard</span>
-                </button>
-              </div>
-            </section>
-
-            <!-- Account Actions -->
-            <section class="card">
-              <h2>ACCOUNT ACTIONS</h2>
-              <div class="actions-section">
-                <div
-                  class="add-funds-section"
-                  x-show="profile?.accounts?.[0]?.mode === 'STANDARD'"
-                >
-                  <label>ADD FUNDS</label>
-                  <div class="add-funds-row">
-                    <input
-                      type="number"
-                      x-model="addFundsAmount"
-                      min="1"
-                      step="1000"
-                    />
-                    <button @click="addFunds()">ADD</button>
-                  </div>
-                </div>
-                <div class="reset-section">
-                  <button class="btn-danger" @click="resetAccount()">
-                    RESET ACCOUNT
-                  </button>
-                  <span class="help-text">Deletes all positions and orders</span>
-                </div>
-              </div>
-            </section>
-          </div>
-        </div>
-      </main>
-    </div>
-
-    <script src="assets/app.js"></script>
+      // Wait for DOM then init
+      if (document.readyState === "loading") {
+        document.addEventListener("DOMContentLoaded", initApp);
+      } else {
+        initApp();
+      }
+    </script>
   </body>
 </html>

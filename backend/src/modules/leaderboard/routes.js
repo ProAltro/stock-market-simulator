@@ -1,6 +1,10 @@
 import Decimal from "decimal.js";
+import { getQuote } from "../../services/market/index.js";
 
 export async function register(fastify, opts) {
+  // Leaderboard always ranks in USD for fairness
+  const LEADERBOARD_CURRENCY = "USD";
+
   // Get leaderboard
   fastify.get("/", async (request, reply) => {
     const { limit = 20 } = request.query;
@@ -48,15 +52,29 @@ export async function register(fastify, opts) {
       let positionsValue = new Decimal(0);
 
       for (const position of account.positions) {
-        const price = await getMarketPrice(fastify, position.instrument.symbol);
+        const price = await getMarketPriceLive(
+          fastify,
+          position.instrument.symbol,
+        );
+        const nativeCurrency = (
+          position.currency ||
+          position.instrument.currency ||
+          "USD"
+        ).toUpperCase();
+        const rate = await fastify.currency.getRate(
+          nativeCurrency,
+          LEADERBOARD_CURRENCY,
+        );
         positionsValue = positionsValue.add(
-          new Decimal(position.quantity).mul(price),
+          new Decimal(position.quantity).mul(price * rate),
         );
       }
 
       const totalValue = new Decimal(account.cashBalance).add(positionsValue);
       const totalReturn = totalValue.sub(startingBalance);
-      const returnPercent = totalReturn.div(startingBalance).mul(100);
+      const returnPercent = startingBalance.gt(0)
+        ? totalReturn.div(startingBalance).mul(100)
+        : new Decimal(0);
 
       // Use display name or masked email
       let displayName;
@@ -75,6 +93,7 @@ export async function register(fastify, opts) {
         totalReturn: totalReturn.toNumber(),
         returnPercent: returnPercent.toNumber(),
         positionsCount: account.positions.length,
+        currency: LEADERBOARD_CURRENCY,
       });
     }
 
@@ -127,6 +146,8 @@ export async function register(fastify, opts) {
 }
 
 async function getFullRankings(fastify) {
+  const LEADERBOARD_CURRENCY = "USD";
+
   const accounts = await fastify.prisma.account.findMany({
     where: { mode: "RANKED" },
     include: {
@@ -145,17 +166,28 @@ async function getFullRankings(fastify) {
     let positionsValue = new Decimal(0);
 
     for (const position of account.positions) {
-      const price = await getMarketPrice(fastify, position.instrument.symbol);
+      const price = await getMarketPriceLive(
+        fastify,
+        position.instrument.symbol,
+      );
+      const nativeCurrency = (
+        position.currency ||
+        position.instrument.currency ||
+        "USD"
+      ).toUpperCase();
+      const rate = await fastify.currency.getRate(
+        nativeCurrency,
+        LEADERBOARD_CURRENCY,
+      );
       positionsValue = positionsValue.add(
-        new Decimal(position.quantity).mul(price),
+        new Decimal(position.quantity).mul(price * rate),
       );
     }
 
     const totalValue = new Decimal(account.cashBalance).add(positionsValue);
-    const returnPercent = totalValue
-      .sub(startingBalance)
-      .div(startingBalance)
-      .mul(100);
+    const returnPercent = startingBalance.gt(0)
+      ? totalValue.sub(startingBalance).div(startingBalance).mul(100)
+      : new Decimal(0);
 
     rankings.push({
       userId: account.userId,
@@ -167,7 +199,28 @@ async function getFullRankings(fastify) {
   return rankings.sort((a, b) => b.returnPercent - a.returnPercent);
 }
 
-async function getMarketPrice(fastify, symbol) {
+// Helper to get live market price with cache fallback
+async function getMarketPriceLive(fastify, symbol) {
+  try {
+    const cacheKey = `quote:${symbol.toUpperCase()}`;
+    const cached = await fastify.redis.get(cacheKey);
+    if (cached) {
+      const data = JSON.parse(cached);
+      return data.price;
+    }
+  } catch (err) {}
+
+  try {
+    const quote = await getQuote(symbol);
+    if (quote && quote.price) {
+      try {
+        const cacheKey = `quote:${symbol.toUpperCase()}`;
+        await fastify.redis.setex(cacheKey, 60, JSON.stringify(quote));
+      } catch (e) {}
+      return quote.price;
+    }
+  } catch (err) {}
+
   const prices = {
     AAPL: 185,
     GOOGL: 142,

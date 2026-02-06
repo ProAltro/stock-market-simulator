@@ -1,0 +1,11 @@
+/* ==========================================
+   Portfolio Page Styles
+   ========================================== */
+
+.portfolio-page {
+    max-width: 1200px;
+}
+
+.portfolio-summary {
+    margin-bottom: 1rem;
+}

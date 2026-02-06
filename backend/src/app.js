@@ -7,6 +7,7 @@ import rateLimit from "@fastify/rate-limit";
 // Import plugins
 import prismaPlugin from "./plugins/prisma.js";
 import redisPlugin from "./plugins/redis.js";
+import currencyPlugin from "./plugins/currency.js";
 
 // Import routes
 import authRoutes from "./modules/auth/routes.js";
@@ -16,6 +17,7 @@ import orderRoutes from "./modules/orders/routes.js";
 import portfolioRoutes from "./modules/portfolio/routes.js";
 import leaderboardRoutes from "./modules/leaderboard/routes.js";
 import profileRoutes from "./modules/profile/routes.js";
+import backtestRoutes from "./modules/backtest/routes.js";
 const app = Fastify({
   logger: {
     level: process.env.NODE_ENV === "production" ? "info" : "debug",
@@ -55,6 +57,7 @@ await app.register(jwt, {
 // Register database and cache plugins
 await app.register(prismaPlugin);
 await app.register(redisPlugin);
+await app.register(currencyPlugin);
 
 // Authentication decorator
 app.decorate("authenticate", async function (request, reply) {
@@ -62,6 +65,20 @@ app.decorate("authenticate", async function (request, reply) {
     await request.jwtVerify();
   } catch (err) {
     reply.code(401).send({ error: "Unauthorized" });
+  }
+});
+
+// Base currency decorator - attaches user's preferred currency to request
+// Must run after authenticate. Routes opt-in via preHandler: [fastify.authenticate, fastify.withBaseCurrency]
+app.decorate("withBaseCurrency", async function (request, reply) {
+  try {
+    const user = await app.prisma.user.findUnique({
+      where: { id: request.user.userId },
+      select: { currency: true },
+    });
+    request.baseCurrency = (user?.currency || "USD").toUpperCase();
+  } catch (err) {
+    request.baseCurrency = "USD";
   }
 });
 
@@ -79,6 +96,8 @@ app.register(orderRoutes, { prefix: "/api/orders" });
 app.register(portfolioRoutes, { prefix: "/api/portfolio" });
 app.register(leaderboardRoutes, { prefix: "/api/leaderboard" });
 app.register(profileRoutes, { prefix: "/api/profile" });
+app.register(backtestRoutes, { prefix: "/api/backtest" });
+
 // Global error handler
 app.setErrorHandler((error, request, reply) => {
   app.log.error(error);

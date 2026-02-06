@@ -51,73 +51,84 @@ export async function getHistory(symbol, options = {}) {
   const endDate = new Date();
   const startDate = new Date();
   
-  // Set lookback based on range
-  // Set lookback based on range (Buffered for Zoom Out)
-  if (range === '1d') {
-    startDate.setDate(startDate.getDate() - 30); // Valid buffer for 5m interval (max ~60d)
-  } else if (range === '5d') {
-    startDate.setDate(startDate.getDate() - 60); // Valid buffer for 15m interval (max ~60d)
-  } else if (range === '1wk') {
-    startDate.setMonth(startDate.getMonth() - 1); // 1mo buffer
-  } else if (range === '1mo') {
-    startDate.setFullYear(startDate.getFullYear() - 1); // 1y buffer
-  } else if (range === '3mo') {
-    startDate.setFullYear(startDate.getFullYear() - 1); // 1y buffer
-  } else if (range === '6mo') {
-    startDate.setFullYear(startDate.getFullYear() - 2); // 2y buffer
-  } else if (range === '1y') {
-    startDate.setFullYear(startDate.getFullYear() - 5); // 5y buffer
-  } else if (range === '2y') {
-    startDate.setFullYear(startDate.getFullYear() - 10); // 10y buffer
-  } else if (range === '5y') {
-    startDate.setFullYear(startDate.getFullYear() - 20); // 20y buffer
-  } else if (range === 'ytd') {
-    startDate.setFullYear(startDate.getFullYear() - 1); // 1y buffer
-  } else {
-    // Fallback logic
-    // Fallback logic
-    if (['1m', '5m', '15m', '30m', '1h', '60m'].includes(yahooInterval)) {
-       let daysBack = 730; 
-       if (yahooInterval === '1m') daysBack = 7;
-       else if (['5m', '15m', '30m'].includes(yahooInterval)) daysBack = 60;
-       startDate.setDate(startDate.getDate() - daysBack);
-    } else {
-       const bufferMultiplier = 5.0; // Significant buffer
-       startDate.setDate(startDate.getDate() - (outputsize * getIntervalDays(interval) * bufferMultiplier));
-    }
-  }
-
-  // Clamp start date for intraday limits to avoid API errors
-  // Yahoo has strict limits on how far back you can request intraday data
-  const now = new Date();
-  const diffTime = Math.abs(now - startDate);
-  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+  // Strict limits for intraday data to avoid Yahoo defaulting to daily
+  // 1m: max 7 days
+  // 5m, 15m, 30m: max 60 days
+  // 1h: max 730 days
   
-  // Limits: 1m=7d; 5m/15m/30m=60d; 1h=730d (2y)
-  if (yahooInterval === '1m' && diffDays > 7) {
-      startDate.setTime(now.getTime() - (6 * 24 * 60 * 60 * 1000)); // Limit to 6 days to be safe
-  } else if (['5m', '15m', '30m', '90m'].includes(yahooInterval) && diffDays > 55) {
-      startDate.setTime(now.getTime() - (58 * 24 * 60 * 60 * 1000)); // Limit to 58 days
-  } else if (['1h', '60m'].includes(yahooInterval) && diffDays > 720) {
-       startDate.setTime(now.getTime() - (720 * 24 * 60 * 60 * 1000)); // Limit to ~2 years
+  // Intraday Data Logic with Zoom Buffer
+  // We want to load slightly MORE data than requested to allow zooming out,
+  // but we must strictly respect Yahoo's limits to avoid daily data fallback.
+  
+  const isIntraday = ['1m', '2m', '5m', '15m', '30m', '60m', '90m', '1h'].includes(yahooInterval);
+  
+  if (isIntraday) {
+      // Step 1: Determine requested range
+      let requestedDays = 1;
+      if (range === '1d') requestedDays = 1;
+      else if (range === '5d') requestedDays = 5;
+      else if (range === '1mo') requestedDays = 30;
+      else if (range === '3mo') requestedDays = 90;
+      
+      // Step 2: Add 20% Zoom Buffer
+      let bufferedDays = Math.ceil(requestedDays * 1.2);
+      
+      // Step 3: Apply Strict Safety Limits (Hard Caps)
+      // 1m: Max 7 days (Safe: 5)
+      // 5m-30m: Max 60 days (Safe: 55)
+      // 60m-1h: Max 730 days (Safe: 700)
+      
+      if (yahooInterval === '1m') {
+          // 1-minute data is very limited
+          bufferedDays = Math.min(bufferedDays, 5); 
+      } else if (['2m', '5m', '15m', '30m', '90m'].includes(yahooInterval)) {
+          // Standard intraday limit
+          bufferedDays = Math.min(bufferedDays, 55); 
+      } else if (['1h', '60m'].includes(yahooInterval)) {
+          // Hourly limit
+          bufferedDays = Math.min(bufferedDays, 700); 
+      }
+      
+      startDate.setDate(startDate.getDate() - bufferedDays);
+      
+  } else {
+      // Daily/Weekly/Monthly logic
+      // Add standard buffer for zooming
+      if (range === '1d') startDate.setDate(startDate.getDate() - 35); // 1mo + buffer
+      else if (range === '5d') startDate.setDate(startDate.getDate() - 70); // 2mo + buffer
+      else if (range === '1wk') startDate.setMonth(startDate.getMonth() - 2);
+      else if (range === '1mo') startDate.setFullYear(startDate.getFullYear() - 1); // 1y default
+      else if (range === '3mo') startDate.setFullYear(startDate.getFullYear() - 1);
+      else if (range === '1y') startDate.setFullYear(startDate.getFullYear() - 2);
+      else if (range === '5y') startDate.setFullYear(startDate.getFullYear() - 6);
+      else startDate.setFullYear(startDate.getFullYear() - 2);
   }
 
   try {
-    const result = await yahooFinance.chart(symbol.toUpperCase(), {
+    const diffDays = Math.ceil((endDate - startDate) / (1000 * 60 * 60 * 24));
+    console.log(`Yahoo Request: ${symbol} ${yahooInterval} ${startDate.toISOString()} -> ${endDate.toISOString()} (${diffDays} days)`);
+    
+    // For intraday, we MUST use query options that force the new chart API
+    // yahoo-finance2 chart() uses query2.finance.yahoo.com by default which is what we want
+    
+    // If we request too much data or invalid range, Yahoo silently falls back to 1d
+    // So we must be precise.
+    
+    const queryOptions = {
       period1: startDate,
       period2: endDate,
-      interval: yahooInterval
-    });
+      interval: yahooInterval,
+      includePrePost: false // Pre-market data can sometimes mess up the intervals
+    };
 
-    // Validating result
+    const result = await yahooFinance.chart(symbol.toUpperCase(), queryOptions);
+
+    // Validate result
     if (!result || !result.quotes || result.quotes.length === 0) {
         return { symbol: symbol.toUpperCase(), interval, data: [] };
     }
-
-    const isIntraday = ['1m', '5m', '15m', '30m', '1h', '60m'].includes(yahooInterval);
     
     const data = result.quotes.map(q => {
-        // q.date is a Date object (usually)
         let time;
         if (isIntraday) {
             time = Math.floor(new Date(q.date).getTime() / 1000); // Unix timestamp
@@ -138,7 +149,15 @@ export async function getHistory(symbol, options = {}) {
     return {
       symbol: symbol.toUpperCase(),
       interval,
-      data: data // Return FULL buffered data (no slicing) to enable frontend zoom-out
+      data: data,
+      debug: {
+        yahooInterval,
+        startDate: startDate.toISOString(),
+        endDate: endDate.toISOString(),
+        requestedInterval: interval,
+        requestedRange: range,
+        diffDays
+      }
     };
 
   } catch (err) {

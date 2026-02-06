@@ -1,0 +1,114 @@
+<!-- Dashboard Page -->
+<div x-show="currentPage === 'dashboard'" class="page dashboard-page">
+  <header class="page-header">
+    <h1>Dashboard</h1>
+    <p
+      class="date"
+      x-text="new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })"
+    ></p>
+  </header>
+
+  <!-- Portfolio Summary Cards -->
+  <div class="stats-grid">
+    <div class="stat-card primary">
+      <span class="stat-label">Total Value</span>
+      <span
+        class="stat-value"
+        x-text="fmtBase(portfolio?.totalValue || 0)"
+      ></span>
+      <span
+        class="stat-change"
+        :class="{ positive: portfolio?.totalReturn >= 0, negative: portfolio?.totalReturn < 0 }"
+      >
+        <span
+          x-text="(portfolio?.totalReturn >= 0 ? '+' : '') + fmtBase(portfolio?.totalReturn || 0)"
+        ></span>
+        (<span x-text="formatPercent(portfolio?.totalReturnPercent || 0)"></span
+        >)
+      </span>
+    </div>
+    <div class="stat-card">
+      <span class="stat-label">Cash Balance</span>
+      <span
+        class="stat-value"
+        x-text="fmtBase(portfolio?.cashBalance || 0)"
+      ></span>
+    </div>
+    <div class="stat-card">
+      <span class="stat-label">Positions Value</span>
+      <span
+        class="stat-value"
+        x-text="fmtBase(portfolio?.positionsValue || 0)"
+      ></span>
+    </div>
+    <div class="stat-card">
+      <span class="stat-label">Positions</span>
+      <span
+        class="stat-value"
+        x-text="portfolio?.positions?.length || 0"
+      ></span>
+    </div>
+  </div>
+
+  <!-- Watchlist & Positions -->
+  <div class="dashboard-grid">
+    <section class="card watchlist-card">
+      <h2>Market Watchlist</h2>
+      <div class="watchlist">
+        <template x-for="stock in watchlist" :key="stock.symbol">
+          <div
+            class="watchlist-item"
+            @click="selectSymbol(stock.symbol); currentPage = 'trade'"
+          >
+            <div class="stock-info">
+              <span class="stock-symbol" x-text="stock.symbol"></span>
+              <span class="stock-name" x-text="stock.name"></span>
+            </div>
+            <div class="stock-price">
+              <span
+                class="price"
+                x-text="formatCurrency(stock.price, stock.currency)"
+              ></span>
+              <span
+                class="change"
+                :class="{ positive: stock.change >= 0, negative: stock.change < 0 }"
+                x-text="formatPercent(stock.changePercent)"
+              ></span>
+            </div>
+          </div>
+        </template>
+      </div>
+    </section>
+
+    <section class="card positions-card">
+      <h2>Current Positions</h2>
+      <div class="positions-list" x-show="portfolio?.positions?.length > 0">
+        <template x-for="pos in portfolio?.positions" :key="pos.id">
+          <div class="position-item">
+            <div class="position-info">
+              <span
+                class="symbol"
+                x-text="pos.instrument?.symbol || pos.symbol"
+              ></span>
+              <span class="qty" x-text="pos.quantity + ' shares'"></span>
+            </div>
+            <div class="position-value">
+              <span
+                class="value"
+                x-text="fmtPos(pos.marketValue, pos.marketValueBase, pos.currency)"
+              ></span>
+              <span
+                class="pnl"
+                :class="{ positive: pos.unrealizedPnLBase >= 0, negative: pos.unrealizedPnLBase < 0 }"
+                x-text="(pos.unrealizedPnLBase >= 0 ? '+' : '') + fmtBase(pos.unrealizedPnLBase)"
+              ></span>
+            </div>
+          </div>
+        </template>
+      </div>
+      <p x-show="!portfolio?.positions?.length" class="empty-state">
+        No positions yet. Start trading!
+      </p>
+    </section>
+  </div>
+</div>

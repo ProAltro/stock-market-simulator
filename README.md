@@ -4,13 +4,16 @@ A full-featured paper trading platform for learning stock market trading without
 
 ## Features
 
-- 📈 **Real-time Market Data** - TwelveData integration with mock fallback
+- 📈 **Real-time Market Data** - Yahoo Finance integration with mock fallback
 - 💰 **Paper Trading** - Trade stocks with virtual cash
 - 👤 **Multiple Profiles** - Switch between Standard and Ranked trading modes
 - 📊 **Portfolio Tracking** - Real-time P&L, positions, and trade history
 - 🏆 **Leaderboard** - Compete with other traders
 - 📉 **TradingView Charts** - Professional candlestick charts
 - 🔐 **JWT Authentication** - Secure user accounts
+- 🧪 **Strategy Backtesting** - Write Python strategies, execute via Judge0 sandbox
+- 🌍 **Multi-Currency Support** - Regional formatting (USD, INR, EUR, GBP, etc.)
+- 📱 **Responsive Design** - Mobile-friendly with collapsible sidebar
 
 ## Tech Stack
 
@@ -20,6 +23,7 @@ A full-featured paper trading platform for learning stock market trading without
 - **Database**: PostgreSQL with Prisma ORM
 - **Cache**: Redis
 - **Auth**: JWT
+- **Code Execution**: Judge0 (sandboxed Python)
 
 ### Frontend
 - **Core**: HTML, CSS, JavaScript
@@ -41,12 +45,12 @@ A full-featured paper trading platform for learning stock market trading without
    cd decrypt
    ```
 
-2. **Start the infrastructure** (PostgreSQL, Redis, & Backend):
+2. **Start the infrastructure** (PostgreSQL, Redis, Judge0 & Backend):
    ```bash
    cd docker
    docker-compose up -d
    ```
-   *This starts the database, cache, and the backend API service.*
+   *This starts the database, cache, Judge0 code execution engine, and the backend API service.*
 
 3. **Install Dependencies (Local Development)**:
    If you want to run services locally outside of Docker:
@@ -120,6 +124,15 @@ decrypt/           <-- Root
 |--------|----------|-------------|
 | GET | `/api/leaderboard` | Get top traders |
 | GET | `/api/leaderboard/me` | Get your rank |
+
+### Backtesting
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/backtest/submit` | Run a backtest |
+| GET | `/api/backtest/history` | User's backtest history |
+| GET | `/api/backtest/templates` | Strategy templates |
+| GET | `/api/backtest/options` | Supported intervals & timeframes |
+| GET | `/api/backtest/health` | Judge0 health check |
 
 ## Development
 

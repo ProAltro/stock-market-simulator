@@ -47,6 +47,7 @@ services:
       JWT_SECRET: ${JWT_SECRET:-change-me-in-production}
       MARKET_DATA_PROVIDER: yahoo
       FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000,http://localhost:3001,http://localhost:8080}
+      JUDGE0_URL: http://judge0-server:2358
     ports:
       - "3000:3000"
     depends_on:
@@ -55,6 +56,67 @@ services:
       redis:
         condition: service_healthy
 
+  # ============ JUDGE0 CODE EXECUTION ============
+  judge0-server:
+    image: judge0/judge0:1.13.1
+    container_name: judge0-server
+    restart: unless-stopped
+    ports:
+      - "2358:2358"
+    environment:
+      REDIS_HOST: judge0-redis
+      REDIS_PORT: 6379
+      POSTGRES_HOST: judge0-postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: judge0
+      POSTGRES_USER: judge0
+      POSTGRES_PASSWORD: judge0password
+      DISABLE_IP_CHECKING: "true"
+    depends_on:
+      - judge0-redis
+      - judge0-postgres
+    privileged: true
+
+  judge0-workers:
+    image: judge0/judge0:1.13.1
+    container_name: judge0-workers
+    command: ["./scripts/workers"]
+    restart: unless-stopped
+    environment:
+      REDIS_HOST: judge0-redis
+      REDIS_PORT: 6379
+      POSTGRES_HOST: judge0-postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: judge0
+      POSTGRES_USER: judge0
+      POSTGRES_PASSWORD: judge0password
+    depends_on:
+      - judge0-redis
+      - judge0-postgres
+    privileged: true
+
+  judge0-redis:
+    image: redis:7-alpine
+    container_name: judge0-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    volumes:
+      - judge0_redis_data:/data
+
+  judge0-postgres:
+    image: postgres:15-alpine
+    container_name: judge0-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: judge0
+      POSTGRES_USER: judge0
+      POSTGRES_PASSWORD: judge0password
+    volumes:
+      - judge0_postgres_data:/var/lib/postgresql/data
+
 volumes:
   postgres_data:
   redis_data:
+  judge0_redis_data:
+  judge0_postgres_data:
+

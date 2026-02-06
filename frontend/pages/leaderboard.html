@@ -1,0 +1,52 @@
+<!-- Leaderboard Page -->
+<div x-show="currentPage === 'leaderboard'" class="page leaderboard-page">
+  <header class="page-header">
+    <h1>Leaderboard</h1>
+    <p>Top traders by return percentage</p>
+  </header>
+
+  <div class="leaderboard-container">
+    <div class="user-rank-card" x-show="myRank">
+      <span class="rank-label">Your Rank</span>
+      <span class="rank-value">#<span x-text="myRank?.rank"></span></span>
+      <span
+        class="rank-return"
+        :class="{ positive: myRank?.returnPercent >= 0, negative: myRank?.returnPercent < 0 }"
+        x-text="formatPercent(myRank?.returnPercent)"
+      ></span>
+    </div>
+
+    <div class="table-scroll">
+      <table class="leaderboard-table">
+        <thead>
+          <tr>
+            <th>Rank</th>
+            <th>Trader</th>
+            <th>Total Value</th>
+            <th>Return</th>
+          </tr>
+        </thead>
+        <tbody>
+          <template x-for="entry in leaderboard" :key="entry.userId">
+            <tr :class="{ highlight: entry.userId === user?.id }">
+              <td class="rank-cell">
+                <span
+                  class="rank-badge"
+                  :class="{ gold: entry.rank === 1, silver: entry.rank === 2, bronze: entry.rank === 3 }"
+                  x-text="entry.rank"
+                ></span>
+              </td>
+              <td x-text="entry.displayName"></td>
+              <td x-text="formatCurrency(entry.totalValue, 'USD')"></td>
+              <td
+                :class="{ positive: entry.returnPercent >= 0, negative: entry.returnPercent < 0 }"
+              >
+                <span x-text="formatPercent(entry.returnPercent)"></span>
+              </td>
+            </tr>
+          </template>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>

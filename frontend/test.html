@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Template Loading Test</title>
+  <style>
+    body { font-family: monospace; padding: 20px; background: #1a1a2e; color: #0f0; }
+    .pass { color: #0f0; }
+    .fail { color: #f00; }
+    .info { color: #0ff; }
+    pre { background: #0a0a1a; padding: 10px; overflow: auto; }
+  </style>
+</head>
+<body>
+  <h1>Frontend Template Loading Tests</h1>
+  <div id="results"></div>
+  
+  <script type="module">
+    const results = document.getElementById('results');
+    
+    function log(msg, status = 'info') {
+      const div = document.createElement('div');
+      div.className = status;
+      div.textContent = `[${status.toUpperCase()}] ${msg}`;
+      results.appendChild(div);
+    }
+    
+    function assert(condition, testName) {
+      if (condition) {
+        log(`✓ ${testName}`, 'pass');
+        return true;
+      } else {
+        log(`✗ ${testName}`, 'fail');
+        return false;
+      }
+    }
+    
+    async function runTests() {
+      log('Starting tests...');
+      let passed = 0;
+      let failed = 0;
+      
+      // Test 1: main.js loads and exports app function
+      log('\n--- Test: main.js app function ---');
+      try {
+        await new Promise(resolve => setTimeout(resolve, 500)); // Wait for module to load
+        if (assert(typeof window.app === 'function', 'window.app is a function')) passed++; else failed++;
+        
+        const appInstance = window.app();
+        if (assert(appInstance !== undefined, 'app() returns an object')) passed++; else failed++;
+        if (assert('manualInterval' in appInstance, 'app has manualInterval property')) passed++; else failed++;
+        if (assert('chartTimeframe' in appInstance, 'app has chartTimeframe property')) passed++; else failed++;
+        if (assert(typeof appInstance.loadChart === 'function', 'app has loadChart function')) passed++; else failed++;
+        
+        log(`manualInterval default: "${appInstance.manualInterval}"`, 'info');
+        log(`chartTimeframe default: "${appInstance.chartTimeframe}"`, 'info');
+      } catch (e) {
+        log(`Error testing app: ${e.message}`, 'fail');
+        failed++;
+      }
+      
+      // Test 2: Template files exist
+      log('\n--- Test: Template files exist ---');
+      const templates = [
+        'components/auth-modal.html',
+        'components/sidebar.html',
+        'pages/dashboard.html',
+        'pages/trade.html',
+        'pages/portfolio.html',
+        'pages/leaderboard.html',
+        'pages/backtest.html',
+        'pages/profile.html'
+      ];
+      
+      for (const path of templates) {
+        try {
+          const res = await fetch(path);
+          if (assert(res.ok, `${path} loads (${res.status})`)) {
+            passed++;
+          } else {
+            failed++;
+          }
+        } catch (e) {
+          log(`${path} failed: ${e.message}`, 'fail');
+          failed++;
+        }
+      }
+      
+      // Test 3: trade.html contains updated interval options
+      log('\n--- Test: trade.html content ---');
+      try {
+        const res = await fetch('pages/trade.html');
+        const html = await res.text();
+        
+        if (assert(html.includes('1 min'), 'trade.html contains "1 min" option')) passed++; else failed++;
+        if (assert(html.includes('5 min'), 'trade.html contains "5 min" option')) passed++; else failed++;
+        if (assert(html.includes('15 min'), 'trade.html contains "15 min" option')) passed++; else failed++;
+        if (assert(html.includes('1 hour'), 'trade.html contains "1 hour" option')) passed++; else failed++;
+        if (assert(html.includes("manualInterval = ''"), 'trade.html resets manualInterval on timeframe click')) passed++; else failed++;
+        
+        // Show a snippet
+        const intervalMatch = html.match(/<select[^>]*interval-select[\s\S]*?<\/select>/);
+        if (intervalMatch) {
+          log('Interval dropdown HTML:', 'info');
+          const pre = document.createElement('pre');
+          pre.textContent = intervalMatch[0];
+          results.appendChild(pre);
+        }
+      } catch (e) {
+        log(`Error testing trade.html: ${e.message}`, 'fail');
+        failed++;
+      }
+      
+      // Test 4: market.js timeframe mapping
+      log('\n--- Test: market.js loadChart logic ---');
+      try {
+        const appInstance = window.app();
+        
+        // Check the timeframe mapping in loadChart
+        // We need to inspect the function or call it
+        const loadChartStr = appInstance.loadChart.toString();
+        
+        if (assert(loadChartStr.includes('"1d": { interval: "5m"'), 'loadChart maps 1D to 5m interval')) passed++; else failed++;
+        if (assert(loadChartStr.includes('"1w": { interval: "15m"'), 'loadChart maps 1W to 15m interval')) passed++; else failed++;
+        if (assert(loadChartStr.includes('"1m": { interval: "1h"'), 'loadChart maps 1M to 1h interval')) passed++; else failed++;
+        
+      } catch (e) {
+        log(`Error testing market.js: ${e.message}`, 'fail');
+        failed++;
+      }
+      
+      // Test 5: API polling tests - verify backend returns correct data for different intervals
+      log('\n--- Test: Backend API Interval Tests ---');
+      const API_URL = 'http://localhost:3000/api';
+      
+      const intervalTests = [
+        { interval: '5m', range: '1d', expectedTimeGap: 5 * 60, name: '5-minute candles' },
+        { interval: '15m', range: '5d', expectedTimeGap: 15 * 60, name: '15-minute candles' },
+        { interval: '1h', range: '1mo', expectedTimeGap: 60 * 60, name: '1-hour candles' },
+        { interval: '1d', range: '3mo', expectedTimeGap: 24 * 60 * 60, name: 'Daily candles' }
+      ];
+      
+      for (const test of intervalTests) {
+        try {
+          const url = `${API_URL}/market/history/AAPL?interval=${test.interval}&range=${test.range}`;
+          log(`Fetching: ${url}`, 'info');
+          
+          const res = await fetch(url);
+          
+          if (!res.ok) {
+            log(`API call failed for ${test.name}: ${res.status}`, 'fail');
+            failed++;
+            continue;
+          }
+          
+          const data = await res.json();
+          
+          if (!data.data || data.data.length < 2) {
+            log(`No data returned for ${test.name}`, 'fail');
+            failed++;
+            continue;
+          }
+          
+          // Calculate median time gap to avoid outliers (like market close overnight gaps)
+          let gapsList = [];
+          for (let i = 1; i < data.data.length; i++) {
+            const time1 = typeof data.data[i-1].time === 'number' ? data.data[i-1].time : new Date(data.data[i-1].time).getTime() / 1000;
+            const time2 = typeof data.data[i].time === 'number' ? data.data[i].time : new Date(data.data[i].time).getTime() / 1000;
+            const diff = Math.abs(time2 - time1);
+            if (diff > 0) gapsList.push(diff);
+          }
+          
+          gapsList.sort((a, b) => a - b);
+          const medianGap = gapsList[Math.floor(gapsList.length / 2)];
+          
+          // Allow small tolerance
+          const minExpected = test.expectedTimeGap * 0.9;
+          const maxExpected = test.expectedTimeGap * 1.1;
+          
+          const isCorrect = medianGap >= minExpected && medianGap <= maxExpected;
+          
+          if (data.debug) {
+            log(`DEBUG: Requested ${data.debug.requestedInterval} (Yahoo: ${data.debug.yahooInterval})`, 'info');
+            log(`DEBUG: Date Range: ${data.debug.startDate} -> ${data.debug.endDate} (Diff: ${data.debug.diffDays} days)`, 'info');
+          } else {
+            log(`DEBUG: No debug info returned from backend`, 'fail');
+          }
+          
+          log(`${test.name}: Got ${data.data.length} candles, median gap: ${Math.round(medianGap)}s (expected ${test.expectedTimeGap}s)`, 'info');
+          
+          if (assert(isCorrect, `${test.name} has correct time interval (~${test.expectedTimeGap}s, got ${Math.round(medianGap)}s)`)) {
+            passed++;
+          } else {
+            failed++;
+          }
+          
+          // Show first few timestamps
+          const firstTimes = data.data.slice(0, 3).map(d => {
+            const t = typeof d.time === 'number' ? new Date(d.time * 1000) : new Date(d.time);
+            return t.toLocaleString();
+          });
+          log(`First timestamps: ${firstTimes.join(' | ')}`, 'info');
+          
+        } catch (e) {
+          log(`Error testing ${test.name}: ${e.message}`, 'fail');
+          failed++;
+        }
+      }
+      
+      // Summary
+      log(`\n========================================`);
+      log(`RESULTS: ${passed} passed, ${failed} failed`, failed === 0 ? 'pass' : 'fail');
+    }
+    
+    runTests();
+  </script>
+  
+  <!-- Load main.js to get the app function -->
+  <script type="module" src="assets/js/main.js"></script>
+</body>
+</html>

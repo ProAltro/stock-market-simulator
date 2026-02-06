@@ -1,0 +1,279 @@
+/* ==========================================
+   Backtest Page Styles
+   ========================================== */
+
+.backtest-page {
+    max-width: 1600px;
+}
+
+.backtest-page .page-subtitle {
+    color: var(--text-muted);
+    font-size: 0.85rem;
+    margin-top: 0.25rem;
+}
+
+.backtest-layout {
+    display: grid;
+    grid-template-columns: 250px 1fr 300px;
+    gap: 1rem;
+}
+
+@media (max-width: 1200px) {
+    .backtest-layout {
+        grid-template-columns: 1fr 1fr;
+    }
+
+    .backtest-config {
+        grid-column: span 2;
+    }
+}
+
+@media (max-width: 768px) {
+    .backtest-layout {
+        grid-template-columns: 1fr;
+    }
+
+    .backtest-config {
+        grid-column: span 1;
+    }
+}
+
+/* Config Panel */
+.backtest-config h3 {
+    font-size: 0.9rem;
+    font-weight: bold;
+    text-transform: uppercase;
+    margin-bottom: 1rem;
+    padding-bottom: 0.5rem;
+    border-bottom: 1px solid var(--border-color);
+}
+
+/* Code Editor */
+.backtest-editor {
+    display: flex;
+    flex-direction: column;
+    min-height: 500px;
+}
+
+.editor-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.75rem;
+    padding-bottom: 0.5rem;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.editor-header h3 {
+    font-size: 0.9rem;
+    font-weight: bold;
+    text-transform: uppercase;
+    margin: 0;
+}
+
+.code-editor {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+}
+
+.code-textarea {
+    flex: 1;
+    min-height: 350px;
+    padding: 1rem;
+    background: #131722;
+    border: 1px solid #2B2B43;
+    color: #d1d4dc;
+    font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+    font-size: 0.85rem;
+    line-height: 1.5;
+    resize: vertical;
+    tab-size: 4;
+}
+
+.code-textarea:focus {
+    outline: none;
+    border-color: #4c525e;
+}
+
+.code-textarea::placeholder {
+    color: #4c525e;
+}
+
+/* API Docs Panel */
+.api-docs-panel {
+    background: #1a1a2e;
+    border: 1px solid var(--border-color);
+    padding: 1rem;
+    margin-top: 0.5rem;
+    max-height: 250px;
+    overflow-y: auto;
+}
+
+.api-docs-panel h4 {
+    font-size: 0.85rem;
+    font-weight: bold;
+    margin-bottom: 0.75rem;
+    text-transform: uppercase;
+    color: var(--text-primary);
+}
+
+.api-function {
+    margin-bottom: 0.75rem;
+    padding-bottom: 0.5rem;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.api-function:last-child {
+    border-bottom: none;
+    margin-bottom: 0;
+}
+
+.api-function code {
+    display: block;
+    color: #7dd3fc;
+    font-size: 0.8rem;
+    margin-bottom: 0.25rem;
+}
+
+.api-function p {
+    color: var(--text-muted);
+    font-size: 0.75rem;
+    margin: 0;
+}
+
+/* Results Panel */
+.backtest-results h3 {
+    font-size: 0.9rem;
+    font-weight: bold;
+    text-transform: uppercase;
+    margin-bottom: 1rem;
+    padding-bottom: 0.5rem;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.no-results {
+    text-align: center;
+    color: var(--text-muted);
+    padding: 2rem 1rem;
+    font-size: 0.85rem;
+}
+
+.result-metrics {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.metric {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.5rem;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+}
+
+.metric.positive .metric-value {
+    color: var(--green);
+}
+
+.metric.negative .metric-value {
+    color: var(--red);
+}
+
+.metric-label {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    text-transform: uppercase;
+}
+
+.metric-value {
+    font-size: 0.9rem;
+    font-weight: bold;
+}
+
+.result-error {
+    margin-top: 1rem;
+    padding: 0.75rem;
+    background: var(--red-bg);
+    border: 1px solid var(--red);
+}
+
+.result-error h4 {
+    font-size: 0.8rem;
+    color: var(--red);
+    margin-bottom: 0.5rem;
+}
+
+.result-error pre {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    white-space: pre-wrap;
+    word-break: break-all;
+}
+
+.result-trades {
+    margin-top: 1rem;
+}
+
+.result-trades h4 {
+    font-size: 0.8rem;
+    font-weight: bold;
+    text-transform: uppercase;
+    margin-bottom: 0.5rem;
+    color: var(--text-secondary);
+}
+
+.trades-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    max-height: 200px;
+    overflow-y: auto;
+}
+
+.trade-item {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+    padding: 0.35rem 0.5rem;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    font-size: 0.75rem;
+}
+
+.trade-item.buy {
+    border-left: 3px solid var(--green);
+}
+
+.trade-item.sell {
+    border-left: 3px solid var(--red);
+}
+
+.trade-type {
+    font-weight: bold;
+    min-width: 35px;
+}
+
+.trade-item.buy .trade-type {
+    color: var(--green);
+}
+
+.trade-item.sell .trade-type {
+    color: var(--red);
+}
+
+.trade-symbol {
+    font-weight: bold;
+    min-width: 50px;
+}
+
+.trade-qty {
+    color: var(--text-muted);
+    flex: 1;
+}
+
+.trade-price {
+    color: var(--text-secondary);
+}

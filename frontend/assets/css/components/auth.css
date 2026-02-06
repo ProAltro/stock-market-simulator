@@ -1,0 +1,85 @@
+/* ==========================================
+   Auth Modal Styles
+   ========================================== */
+
+.auth-overlay {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--bg-primary);
+    padding: 1rem;
+}
+
+.auth-modal {
+    width: 100%;
+    max-width: 320px;
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    padding: 1.5rem;
+}
+
+.auth-header {
+    text-align: center;
+    margin-bottom: 1.5rem;
+}
+
+.logo {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    margin-bottom: 0.25rem;
+}
+
+.logo-icon {
+    font-size: 1.5rem;
+}
+
+.logo-text {
+    font-size: 1.25rem;
+    font-weight: bold;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+}
+
+.auth-subtitle {
+    color: var(--text-muted);
+    font-size: 0.85rem;
+}
+
+.auth-tabs {
+    display: flex;
+    margin-bottom: 1rem;
+    border: 1px solid var(--border-color);
+}
+
+.auth-tabs button {
+    flex: 1;
+    padding: 0.5rem;
+    border: none;
+    background: transparent;
+    color: var(--text-secondary);
+    font-family: monospace;
+    font-size: 0.85rem;
+    cursor: pointer;
+}
+
+.auth-tabs button.active {
+    background: var(--text-primary);
+    color: var(--bg-primary);
+}
+
+.auth-form {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.auth-footer {
+    text-align: center;
+    margin-top: 1rem;
+    color: var(--text-muted);
+    font-size: 0.75rem;
+}

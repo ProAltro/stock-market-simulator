@@ -1,0 +1,97 @@
+/* ==========================================
+   Leaderboard Page Styles
+   ========================================== */
+
+.leaderboard-page {
+    max-width: 800px;
+}
+
+.leaderboard-container {
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    padding: 1rem;
+}
+
+.user-rank-card {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 1rem;
+    margin-bottom: 1rem;
+    background: var(--bg-secondary);
+    border: 2px solid var(--text-primary);
+    flex-wrap: wrap;
+}
+
+@media (max-width: 768px) {
+    .leaderboard-page {
+        max-width: 100%;
+    }
+}
+
+.rank-label {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    text-transform: uppercase;
+}
+
+.rank-value {
+    font-size: 1.5rem;
+    font-weight: bold;
+}
+
+.rank-return {
+    font-size: 0.9rem;
+}
+
+.leaderboard-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.leaderboard-table th,
+.leaderboard-table td {
+    padding: 0.5rem;
+    text-align: left;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.leaderboard-table th {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    font-weight: normal;
+}
+
+.leaderboard-table tr.highlight {
+    background: var(--bg-hover);
+}
+
+.rank-cell {
+    width: 60px;
+}
+
+.rank-badge {
+    display: inline-block;
+    width: 24px;
+    height: 24px;
+    text-align: center;
+    line-height: 24px;
+    font-weight: bold;
+    font-size: 0.75rem;
+}
+
+.rank-badge.gold {
+    background: gold;
+    color: #000;
+}
+
+.rank-badge.silver {
+    background: silver;
+    color: #000;
+}
+
+.rank-badge.bronze {
+    background: #cd7f32;
+    color: #000;
+}

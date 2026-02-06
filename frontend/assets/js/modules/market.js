@@ -85,23 +85,39 @@ export const marketModule = {
         }
 
         // Map timeframe to API params compatible with Yahoo Finance
-        // 1d: 5min candles
-        // 1w: 30min candles
-        // 1m: 60min (1h) candles
-        // 3m: 1day candles
-        // 1y: 1week candles (or 1day)
+        // Yahoo Finance interval limits:
+        // - 1m: max 7 days
+        // - 5m, 15m, 30m: max 60 days
+        // - 1h: max 730 days (~2 years)
+        // - 1d: unlimited
         const timeframeMap = {
-            "1d": { interval: "5m", range: "1d" },
-            "1w": { interval: "15m", range: "5d" },
-            "1m": { interval: "60m", range: "1mo" },
-            "3m": { interval: "1d", range: "3mo" },
-            "1y": { interval: "1d", range: "1y" },
+            "1d": { interval: "5m", range: "1d" },    // 1 day view: 5-minute candles
+            "1w": { interval: "15m", range: "5d" },   // 1 week view: 15-minute candles
+            "1m": { interval: "1h", range: "1mo" },   // 1 month view: 1-hour candles
+            "3m": { interval: "1d", range: "3mo" },   // 3 month view: daily candles
+            "1y": { interval: "1d", range: "1y" },    // 1 year view: daily candles
         };
         const params = timeframeMap[this.chartTimeframe] || timeframeMap["1m"];
         
-        // Allow manual granularity override
-        const interval = this.manualInterval || params.interval;
-        const range = params.range;
+        // Allow manual granularity override from dropdown
+        // If user selected a specific interval, use it; otherwise use auto-calculated
+        let interval = params.interval;
+        let range = params.range;
+        
+        if (this.manualInterval) {
+            interval = this.manualInterval;
+            // Adjust range based on interval to get reasonable data
+            // For intraday intervals, ensure we don't exceed Yahoo's limits
+            const intradayRanges = {
+                "1m": "1d",      // 1-min: max 7 days, use 1 day
+                "5m": range,     // 5-min: max 60 days, use selected timeframe range
+                "15m": range,    // 15-min: max 60 days
+                "30m": range,    // 30-min: max 60 days
+                "1h": range,     // 1-hour: max 730 days
+                "1d": range,     // Daily: unlimited
+            };
+            // Keep the range from timeframe selection
+        }
 
         // Fetch historical data
         let chartData = [];

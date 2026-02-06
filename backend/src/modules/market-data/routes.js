@@ -30,7 +30,11 @@ export async function register(fastify, opts) {
   // Get historical data (OHLC)
   fastify.get("/history/:symbol", async (request, reply) => {
     const { symbol } = request.params;
-    const { interval = "1day", range = "1mo", outputsize = 500 } = request.query;
+    const {
+      interval = "1day",
+      range = "1mo",
+      outputsize = 500,
+    } = request.query;
     // Cache check removed
 
     try {
@@ -151,6 +155,7 @@ async function ensureInstrumentExists(fastify, symbol) {
           symbol: upperSymbol,
           name: quote.name || `${upperSymbol} Inc.`,
           type: "EQUITY",
+          currency: (quote.currency || "USD").toUpperCase(),
           exchange: quote.exchange || "NASDAQ",
           isActive: true,
         },
@@ -160,9 +165,9 @@ async function ensureInstrumentExists(fastify, symbol) {
       return instrument;
     } catch (dbErr) {
       // If unique constraint violation (P2002), it means another request created it just now
-      if (dbErr.code === 'P2002') {
+      if (dbErr.code === "P2002") {
         existing = await fastify.prisma.instrument.findUnique({
-            where: { symbol: upperSymbol },
+          where: { symbol: upperSymbol },
         });
         if (existing) return existing;
       }

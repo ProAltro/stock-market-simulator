@@ -1,0 +1,246 @@
+<!-- Trade Page -->
+<div x-show="currentPage === 'trade'" class="page trade-page">
+  <header class="page-header">
+    <h1>Trade</h1>
+    <div class="search-controls">
+      <div class="symbol-search">
+        <input
+          type="text"
+          placeholder="Search symbol or company..."
+          x-model="searchQuery"
+          @input="searchInstruments()"
+        />
+        <div x-show="searchResults.length > 0" class="search-dropdown">
+          <template x-for="result in searchResults" :key="result.symbol">
+            <div class="search-result" @click="selectSymbol(result.symbol)">
+              <span class="symbol" x-text="result.symbol"></span>
+              <span class="name" x-text="result.name"></span>
+              <span class="exchange" x-text="result.exchange"></span>
+            </div>
+          </template>
+        </div>
+      </div>
+      <select
+        x-model="selectedExchange"
+        @change="searchInstruments()"
+        class="exchange-select"
+      >
+        <option value="">ALL EXCHANGES</option>
+        <option value="NYSE">NYSE</option>
+        <option value="NASDAQ">NASDAQ</option>
+        <option value="NSE">NSE (India)</option>
+        <option value="BSE">BSE (India)</option>
+      </select>
+    </div>
+  </header>
+
+  <div class="trade-layout">
+    <!-- Chart Area -->
+    <div class="chart-area">
+      <div class="chart-header">
+        <div class="symbol-info">
+          <h2 x-text="selectedSymbol || 'Select a Symbol'"></h2>
+          <span
+            class="price-large"
+            x-text="formatCurrency(currentQuote?.price || 0, currentQuote?.currency)"
+          ></span>
+          <span
+            class="change-badge"
+            :class="{ positive: currentQuote?.change >= 0, negative: currentQuote?.change < 0 }"
+          >
+            <span
+              x-text="formatPercent(currentQuote?.changePercent || 0)"
+            ></span>
+          </span>
+        </div>
+        <div class="chart-controls">
+          <select
+            class="interval-select"
+            x-model="manualInterval"
+            @change="loadChart()"
+          >
+            <option value="">Auto</option>
+            <option value="1m">1 min</option>
+            <option value="5m">5 min</option>
+            <option value="15m">15 min</option>
+            <option value="30m">30 min</option>
+            <option value="1h">1 hour</option>
+            <option value="1d">1 day</option>
+          </select>
+          <div class="timeframe-btns">
+            <button
+              :class="{ active: chartTimeframe === '1d' }"
+              @click="chartTimeframe = '1d'; manualInterval = ''; loadChart()"
+            >
+              1D
+            </button>
+            <button
+              :class="{ active: chartTimeframe === '1w' }"
+              @click="chartTimeframe = '1w'; manualInterval = ''; loadChart()"
+            >
+              1W
+            </button>
+            <button
+              :class="{ active: chartTimeframe === '1m' }"
+              @click="chartTimeframe = '1m'; manualInterval = ''; loadChart()"
+            >
+              1M
+            </button>
+            <button
+              :class="{ active: chartTimeframe === '3m' }"
+              @click="chartTimeframe = '3m'; manualInterval = ''; loadChart()"
+            >
+              3M
+            </button>
+            <button
+              :class="{ active: chartTimeframe === '1y' }"
+              @click="chartTimeframe = '1y'; manualInterval = ''; loadChart()"
+            >
+              1Y
+            </button>
+          </div>
+          <div class="chart-type-btns">
+            <button
+              :class="{ active: chartType === 'candle' }"
+              @click="chartType = 'candle'; loadChart()"
+              title="Candlestick"
+            >
+              &#9632;
+            </button>
+            <button
+              :class="{ active: chartType === 'line' }"
+              @click="chartType = 'line'; loadChart()"
+              title="Line"
+            >
+              &#8212;
+            </button>
+          </div>
+        </div>
+      </div>
+      <div id="chart-container" class="chart-container"></div>
+    </div>
+
+    <!-- Order Panel -->
+    <div class="order-panel">
+      <h3>Place Order</h3>
+
+      <div class="order-type-tabs">
+        <button
+          @click="orderForm.side = 'BUY'"
+          :class="{ active: orderForm.side === 'BUY', buy: true }"
+        >
+          Buy
+        </button>
+        <button
+          @click="orderForm.side = 'SELL'"
+          :class="{ active: orderForm.side === 'SELL', sell: true }"
+        >
+          Sell
+        </button>
+      </div>
+
+      <form @submit.prevent="placeOrder()" class="order-form">
+        <div class="form-group">
+          <label>Symbol</label>
+          <input type="text" x-model="selectedSymbol" readonly />
+        </div>
+        <div class="form-group">
+          <label>Quantity</label>
+          <input
+            type="number"
+            x-model="orderForm.quantity"
+            min="1"
+            step="1"
+            required
+          />
+        </div>
+        <div class="form-group">
+          <label>Order Type</label>
+          <select x-model="orderForm.orderType">
+            <option value="MARKET">Market</option>
+            <option value="LIMIT">Limit</option>
+          </select>
+        </div>
+        <div class="form-group" x-show="orderForm.orderType === 'LIMIT'">
+          <label>Limit Price</label>
+          <input type="number" x-model="orderForm.limitPrice" step="0.01" />
+        </div>
+
+        <div class="order-summary">
+          <div class="summary-row">
+            <span>Est. Total</span>
+            <span
+              x-text="formatCurrency((currentQuote?.price || 0) * (orderForm.quantity || 0), currentQuote?.currency)"
+            ></span>
+          </div>
+          <div class="summary-row">
+            <span>Available</span>
+            <span x-text="fmtBase(portfolio?.cashBalance || 0)"></span>
+          </div>
+        </div>
+
+        <p x-show="orderError" class="error-message" x-text="orderError"></p>
+        <p
+          x-show="orderSuccess"
+          class="success-message"
+          x-text="orderSuccess"
+        ></p>
+
+        <button
+          type="submit"
+          class="btn-order"
+          :class="{ buy: orderForm.side === 'BUY', sell: orderForm.side === 'SELL' }"
+          :disabled="!selectedSymbol || orderLoading"
+        >
+          <span
+            x-show="!orderLoading"
+            x-text="orderForm.side + ' ' + selectedSymbol"
+          ></span>
+          <span x-show="orderLoading">Processing...</span>
+        </button>
+      </form>
+    </div>
+  </div>
+
+  <!-- Order History -->
+  <section class="order-history">
+    <h3>Recent Orders</h3>
+    <div class="table-scroll">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Time</th>
+            <th>Symbol</th>
+            <th>Side</th>
+            <th>Qty</th>
+            <th>Price</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          <template x-for="order in orders.slice(0, 10)" :key="order.id">
+            <tr>
+              <td x-text="new Date(order.createdAt).toLocaleString()"></td>
+              <td x-text="order.instrument?.symbol"></td>
+              <td
+                :class="{ 'text-green': order.side === 'BUY', 'text-red': order.side === 'SELL' }"
+                x-text="order.side"
+              ></td>
+              <td x-text="order.quantity"></td>
+              <td
+                x-text="formatCurrency(order.avgFillPrice, order.currency || 'USD')"
+              ></td>
+              <td>
+                <span
+                  class="status-badge"
+                  :class="order.status.toLowerCase()"
+                  x-text="order.status"
+                ></span>
+              </td>
+            </tr>
+          </template>
+        </tbody>
+      </table>
+    </div>
+  </section>
+</div>
