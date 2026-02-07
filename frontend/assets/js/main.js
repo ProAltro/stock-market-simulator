@@ -4,7 +4,9 @@ import { ordersModule } from "./modules/orders.js";
 import { marketModule } from "./modules/market.js";
 import { backtestModule } from "./modules/backtest.js";
 import { routerModule } from "./modules/router.js";
+import { marketSimModule } from "./modules/marketSim.js";
 import { formatCurrency, formatPercent } from "./utils.js";
+import { API_URL } from "./api.js";
 
 // Make it available globally for Alpine
 window.app = function () {
@@ -22,6 +24,7 @@ window.app = function () {
     ...marketModule,
     ...backtestModule,
     ...routerModule,
+    ...marketSimModule,
 
     // Shared Utils
     formatCurrency,
@@ -76,9 +79,17 @@ window.app = function () {
         this.fetchLeaderboard(),
       ]);
 
-      // Load quote + chart for default symbol so trade page shows data immediately
+      // Load quote for default symbol so trade page shows data immediately
+      // Chart will be initialized when navigating to the trade page
       if (this.selectedSymbol) {
-        await this.selectSymbol(this.selectedSymbol);
+        try {
+          const res = await fetch(
+            `${API_URL}/market/quote/${this.selectedSymbol}`,
+          );
+          this.currentQuote = await res.json();
+        } catch (err) {
+          console.error("Failed to fetch initial quote:", err);
+        }
       }
     },
   };

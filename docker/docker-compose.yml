@@ -14,7 +14,7 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: [ "CMD-SHELL", "pg_isready -U decrypt" ]
+      test: ["CMD-SHELL", "pg_isready -U decrypt"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -28,7 +28,7 @@ services:
     volumes:
       - redis_data:/data
     healthcheck:
-      test: [ "CMD", "redis-cli", "ping" ]
+      test: ["CMD", "redis-cli", "ping"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -48,6 +48,7 @@ services:
       MARKET_DATA_PROVIDER: yahoo
       FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000,http://localhost:3001,http://localhost:8080}
       JUDGE0_URL: http://judge0-server:2358
+      MARKET_SIM_URL: http://market-sim:8080
     ports:
       - "3000:3000"
     depends_on:
@@ -55,6 +56,22 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      market-sim:
+        condition: service_healthy
+
+  market-sim:
+    build:
+      context: ../market_sim
+      dockerfile: Dockerfile
+    container_name: decrypt-market-sim
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
 
   # ============ JUDGE0 CODE EXECUTION ============
   judge0-server:
@@ -119,4 +136,3 @@ volumes:
   redis_data:
   judge0_redis_data:
   judge0_postgres_data:
-

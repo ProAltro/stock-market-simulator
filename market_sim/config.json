@@ -1,0 +1,44 @@
+{
+  "simulation": {
+    "tick_rate_ms": 50,
+    "max_ticks": 0,
+    "auto_start": false,
+    "ticks_per_day": 72000,
+    "populate_ticks_per_day": 200,
+    "start_date": "2025-08-07",
+    "stocks_file": "stocks.json"
+  },
+  "agents": {
+    "fundamental_traders": 60,
+    "momentum_traders": 0,
+    "mean_reversion_traders": 50,
+    "noise_traders": 55,
+    "market_makers": 25
+  },
+  "agent_params": {
+    "initial_cash_mean": 100000.0,
+    "initial_cash_std": 20000.0,
+    "risk_aversion_mean": 1.0,
+    "risk_aversion_std": 0.3
+  },
+  "news": {
+    "lambda": 0.12,
+    "global_impact_std": 0.02,
+    "industry_impact_std": 0.03,
+    "company_impact_std": 0.03,
+    "political_impact_std": 0.04
+  },
+  "market": {
+    "spread_base": 0.002,
+    "volatility_scaling": true
+  },
+  "api": {
+    "host": "0.0.0.0",
+    "port": 8080
+  },
+  "logging": {
+    "level": "info",
+    "file": "market_sim.log",
+    "console": true
+  }
+}

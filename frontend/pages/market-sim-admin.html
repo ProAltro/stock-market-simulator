@@ -1,0 +1,382 @@
+<!-- Market Simulation Admin Page -->
+<div x-show="currentPage === 'market-sim-admin'" class="page market-sim-page">
+  <header class="page-header">
+    <h1>SIM ADMIN</h1>
+    <div class="sim-controls">
+      <span
+        class="sim-status"
+        :class="{ connected: simAdminAuth }"
+        x-text="simAdminAuth ? 'AUTHENTICATED' : 'LOCKED'"
+      ></span>
+      <a
+        href="#"
+        @click.prevent="navigateTo('market-sim')"
+        class="back-link"
+        style="color: var(--text-muted); text-decoration: none"
+        >&larr; Back to Sim</a
+      >
+    </div>
+  </header>
+
+  <!-- Auth Gate -->
+  <div
+    x-show="!simAdminAuth"
+    style="display: flex; justify-content: center; padding-top: 2rem"
+  >
+    <div class="card" style="max-width: 400px; width: 100%">
+      <h2>Admin Access</h2>
+      <p
+        style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 1rem"
+      >
+        Enter the admin password to manage the market simulation.
+      </p>
+      <div class="form-group" style="margin-bottom: 0.75rem">
+        <label>Password</label>
+        <input
+          type="password"
+          x-model="simAdminPassword"
+          @keyup.enter="authenticateSimAdmin()"
+          placeholder="Enter password"
+          class="form-input"
+        />
+      </div>
+      <p
+        x-show="simAdminError"
+        class="error-message"
+        x-text="simAdminError"
+        style="margin-bottom: 0.5rem"
+      ></p>
+      <button @click="authenticateSimAdmin()" class="btn-primary btn-block">
+        Authenticate
+      </button>
+    </div>
+  </div>
+
+  <!-- Admin Dashboard -->
+  <div x-show="simAdminAuth">
+    <!-- Delete Confirmation Modal -->
+    <div
+      x-show="_pendingDeleteConfirm"
+      style="
+        position: fixed;
+        inset: 0;
+        z-index: 1000;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: rgba(0, 0, 0, 0.7);
+      "
+    >
+      <div class="card" style="max-width: 400px; width: 90%; margin: 0">
+        <h2 style="color: var(--red)">Confirm Delete</h2>
+        <p
+          style="
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            margin-bottom: 1rem;
+          "
+        >
+          Delete <strong>ALL</strong> simulation data? This cannot be undone.
+          All candles, news, and state entries will be permanently removed.
+        </p>
+        <div style="display: flex; gap: 0.5rem">
+          <button
+            @click="adminDeleteAllConfirmed()"
+            class="btn-danger"
+            style="flex: 1"
+          >
+            Delete Everything
+          </button>
+          <button
+            @click="adminDeleteAllCancel()"
+            class="btn-sm"
+            style="flex: 1; padding: 0.5rem"
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div class="dashboard-grid">
+      <!-- Status Panel -->
+      <div class="card">
+        <h2>Simulation Status</h2>
+        <div class="stats-grid" style="grid-template-columns: 1fr 1fr">
+          <div class="stat-card">
+            <span class="stat-label">State</span>
+            <span
+              class="stat-value"
+              :class="{ positive: simConnected, negative: !simConnected }"
+              x-text="simConnected ? 'RUNNING' : 'STOPPED'"
+            ></span>
+          </div>
+          <div class="stat-card">
+            <span class="stat-label">Sim Date</span>
+            <span class="stat-value" x-text="simState?.simDate || 'N/A'"></span>
+          </div>
+          <div class="stat-card">
+            <span class="stat-label">Tick</span>
+            <span class="stat-value" x-text="simState?.tick || 0"></span>
+          </div>
+          <div class="stat-card">
+            <span class="stat-label">Assets</span>
+            <span class="stat-value" x-text="simAssets.length"></span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Control Panel -->
+      <div class="card">
+        <h2>Controls</h2>
+        <!-- Progress indicator -->
+        <div
+          x-show="adminLoading"
+          style="
+            padding: 0.75rem;
+            margin-bottom: 0.75rem;
+            border: 1px solid var(--border-color);
+            background: var(--bg-secondary);
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+          "
+        >
+          <div
+            style="
+              width: 16px;
+              height: 16px;
+              border: 2px solid var(--border-color);
+              border-top-color: var(--text-primary);
+              animation: spin 1s linear infinite;
+              flex-shrink: 0;
+            "
+          ></div>
+          <span
+            style="font-size: 0.8rem; color: var(--text-secondary)"
+            x-text="_adminActionLabel || 'Processing...'"
+          ></span>
+        </div>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem">
+          <button
+            @click="adminPopulate()"
+            class="btn-primary"
+            :disabled="adminLoading"
+          >
+            Populate 6M History
+          </button>
+          <button
+            @click="adminDeleteAll()"
+            class="btn-danger"
+            :disabled="adminLoading"
+          >
+            Delete All Data
+          </button>
+          <button
+            @click="adminControl('start')"
+            class="btn-primary"
+            :disabled="adminLoading"
+          >
+            Start Simulation
+          </button>
+          <button
+            @click="adminControl('stop')"
+            class="btn-primary"
+            :disabled="adminLoading"
+          >
+            Stop Simulation
+          </button>
+          <button
+            @click="adminControl('start-sync')"
+            class="btn-primary"
+            :disabled="adminLoading"
+          >
+            Start DB Sync
+          </button>
+          <button
+            @click="adminControl('stop-sync')"
+            class="btn-primary"
+            :disabled="adminLoading"
+          >
+            Stop DB Sync
+          </button>
+        </div>
+        <div
+          x-show="adminMessage"
+          class="success-message"
+          style="margin-top: 0.75rem"
+          x-text="adminMessage"
+        ></div>
+        <div
+          x-show="adminError"
+          class="error-message"
+          style="margin-top: 0.75rem"
+          x-text="adminError"
+        ></div>
+      </div>
+
+      <!-- DB Stats -->
+      <div class="card">
+        <h2>Database Stats</h2>
+        <div
+          class="stats-grid"
+          style="grid-template-columns: 1fr 1fr"
+          x-show="adminStats"
+        >
+          <div class="stat-card">
+            <span class="stat-label">Instruments</span>
+            <span
+              class="stat-value"
+              x-text="adminStats?.instruments || 0"
+            ></span>
+          </div>
+          <div class="stat-card">
+            <span class="stat-label">Candles</span>
+            <span class="stat-value" x-text="adminStats?.candles || 0"></span>
+          </div>
+          <div class="stat-card">
+            <span class="stat-label">News</span>
+            <span class="stat-value" x-text="adminStats?.news || 0"></span>
+          </div>
+          <div class="stat-card">
+            <span class="stat-label">State Entries</span>
+            <span class="stat-value" x-text="adminStats?.states || 0"></span>
+          </div>
+        </div>
+        <button
+          @click="fetchAdminStats()"
+          class="btn-sm"
+          style="margin-top: 0.5rem"
+        >
+          Refresh Stats
+        </button>
+      </div>
+
+      <!-- News Injection -->
+      <div class="card">
+        <h2>Inject News</h2>
+        <div class="form-group" style="margin-bottom: 0.75rem">
+          <label>Category</label>
+          <select x-model="adminNewsForm.category" class="form-input">
+            <option value="GLOBAL">GLOBAL</option>
+            <option value="POLITICAL">POLITICAL</option>
+            <option value="INDUSTRY">INDUSTRY</option>
+            <option value="COMPANY">COMPANY</option>
+          </select>
+        </div>
+        <div
+          class="form-group"
+          style="margin-bottom: 0.75rem"
+          x-show="adminNewsForm.category === 'COMPANY'"
+        >
+          <label>Symbol</label>
+          <select x-model="adminNewsForm.symbol" class="form-input">
+            <template x-for="a in simAssets" :key="a.symbol">
+              <option
+                :value="a.symbol"
+                x-text="a.symbol + ' - ' + (a.name || '')"
+              ></option>
+            </template>
+          </select>
+        </div>
+        <div class="form-group" style="margin-bottom: 0.75rem">
+          <label>Sentiment</label>
+          <div style="display: flex; gap: 0.5rem">
+            <button
+              @click="adminNewsForm.sentiment = 'positive'"
+              class="btn-sm"
+              :style="adminNewsForm.sentiment === 'positive' ? 'background: var(--green); color: var(--bg-primary); border-color: var(--green);' : 'color: var(--green); border-color: var(--green);'"
+              style="flex: 1; padding: 0.5rem"
+            >
+              Positive
+            </button>
+            <button
+              @click="adminNewsForm.sentiment = 'negative'"
+              class="btn-sm"
+              :style="adminNewsForm.sentiment === 'negative' ? 'background: var(--red); color: var(--bg-primary); border-color: var(--red);' : 'color: var(--red); border-color: var(--red);'"
+              style="flex: 1; padding: 0.5rem"
+            >
+              Negative
+            </button>
+          </div>
+        </div>
+        <div class="form-group" style="margin-bottom: 0.75rem">
+          <label>Headline (optional)</label>
+          <input
+            type="text"
+            x-model="adminNewsForm.headline"
+            class="form-input"
+            placeholder="Auto-generated if empty"
+          />
+        </div>
+        <div class="form-group" style="margin-bottom: 0.75rem">
+          <label>Magnitude (0.01 - 0.2)</label>
+          <input
+            type="number"
+            x-model.number="adminNewsForm.magnitude"
+            class="form-input"
+            min="0.01"
+            max="0.2"
+            step="0.01"
+          />
+        </div>
+        <button
+          @click="adminInjectNews()"
+          class="btn-primary"
+          :disabled="adminLoading"
+          style="width: 100%"
+        >
+          Inject News Event
+        </button>
+      </div>
+
+      <!-- Instruments List -->
+      <div class="card" style="grid-column: 1 / -1">
+        <h2>Instruments</h2>
+        <div class="table-scroll" x-show="adminInstruments.length > 0">
+          <table
+            class="data-table"
+            style="width: 100%; border-collapse: collapse"
+          >
+            <thead>
+              <tr>
+                <th>Symbol</th>
+                <th>Name</th>
+                <th>Industry</th>
+                <th>Price</th>
+                <th>Market Cap</th>
+                <th>Volatility</th>
+              </tr>
+            </thead>
+            <tbody>
+              <template x-for="inst in adminInstruments" :key="inst.symbol">
+                <tr>
+                  <td style="font-weight: bold" x-text="inst.symbol"></td>
+                  <td x-text="inst.name || ''"></td>
+                  <td x-text="inst.industry || ''"></td>
+                  <td
+                    x-text="'$' + (inst.price || inst.initialPrice || 0).toFixed(2)"
+                  ></td>
+                  <td x-text="formatLargeNumber(inst.marketCap || 0)"></td>
+                  <td
+                    x-text="((inst.volatility || inst.baseVolatility || 0) * 100).toFixed(1) + '%'"
+                  ></td>
+                </tr>
+              </template>
+            </tbody>
+          </table>
+        </div>
+        <div x-show="adminInstruments.length === 0" class="empty-state">
+          No instruments loaded
+        </div>
+        <button
+          @click="fetchAdminInstruments()"
+          class="btn-sm"
+          style="margin-top: 0.5rem"
+        >
+          Refresh Instruments
+        </button>
+      </div>
+    </div>
+  </div>
+</div>

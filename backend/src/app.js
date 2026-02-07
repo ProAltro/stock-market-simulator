@@ -18,6 +18,10 @@ import portfolioRoutes from "./modules/portfolio/routes.js";
 import leaderboardRoutes from "./modules/leaderboard/routes.js";
 import profileRoutes from "./modules/profile/routes.js";
 import backtestRoutes from "./modules/backtest/routes.js";
+import marketSimRoutes from "./modules/market-sim/routes.js";
+import marketSimAdminRoutes from "./modules/market-sim/admin.js";
+import { startSync, stopSync } from "./services/market/simSyncService.js";
+import { initMarketSim } from "./services/market/simInitService.js";
 const app = Fastify({
   logger: {
     level: process.env.NODE_ENV === "production" ? "info" : "debug",
@@ -42,8 +46,9 @@ await app.register(cors, {
 
 // Register rate limiting
 await app.register(rateLimit, {
-  max: 100,
+  max: 300,
   timeWindow: "1 minute",
+  allowList: (req) => req.url.startsWith("/api/market-sim"),
 });
 
 // Register JWT
@@ -97,6 +102,8 @@ app.register(portfolioRoutes, { prefix: "/api/portfolio" });
 app.register(leaderboardRoutes, { prefix: "/api/leaderboard" });
 app.register(profileRoutes, { prefix: "/api/profile" });
 app.register(backtestRoutes, { prefix: "/api/backtest" });
+app.register(marketSimRoutes, { prefix: "/api/market-sim" });
+app.register(marketSimAdminRoutes, { prefix: "/api/market-sim/admin" });
 
 // Global error handler
 app.setErrorHandler((error, request, reply) => {
@@ -117,6 +124,19 @@ const start = async () => {
     const port = process.env.PORT || 3000;
     await app.listen({ port: Number(port), host: "0.0.0.0" });
     app.log.info(`🚀 Server running on http://localhost:${port}`);
+
+    // Initialize market sim (push tuned config, populate if needed), then start sync
+    initMarketSim().then(() => {
+      startSync(app.prisma);
+    });
+
+    // Graceful shutdown
+    const shutdown = () => {
+      stopSync();
+      app.close();
+    };
+    process.on("SIGINT", shutdown);
+    process.on("SIGTERM", shutdown);
   } catch (err) {
     app.log.error(err);
     process.exit(1);
