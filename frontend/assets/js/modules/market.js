@@ -18,17 +18,23 @@ export const marketModule = {
     async fetchWatchlist() {
         // Load some default symbols
         const symbols = ["AAPL", "GOOGL", "MSFT", "AMZN", "META", "NVDA"];
-        this.watchlist = [];
+        const newWatchlist = [];
 
         for (const symbol of symbols) {
             try {
                 const res = await fetch(`${API_URL}/market/quote/${symbol}`);
-                const quote = await res.json();
-                this.watchlist.push(quote);
+                if (res.ok) {
+                    const quote = await res.json();
+                    if (quote && quote.symbol) {
+                        newWatchlist.push(quote);
+                    }
+                }
             } catch (err) {
                 console.error(`Failed to fetch quote for ${symbol}:`, err);
             }
         }
+        
+        this.watchlist = newWatchlist;
     },
 
     async selectSymbol(symbol) {

@@ -201,46 +201,4 @@
       </form>
     </div>
   </div>
-
-  <!-- Order History -->
-  <section class="order-history">
-    <h3>Recent Orders</h3>
-    <div class="table-scroll">
-      <table class="data-table">
-        <thead>
-          <tr>
-            <th>Time</th>
-            <th>Symbol</th>
-            <th>Side</th>
-            <th>Qty</th>
-            <th>Price</th>
-            <th>Status</th>
-          </tr>
-        </thead>
-        <tbody>
-          <template x-for="order in orders.slice(0, 10)" :key="order.id">
-            <tr>
-              <td x-text="new Date(order.createdAt).toLocaleString()"></td>
-              <td x-text="order.instrument?.symbol"></td>
-              <td
-                :class="{ 'text-green': order.side === 'BUY', 'text-red': order.side === 'SELL' }"
-                x-text="order.side"
-              ></td>
-              <td x-text="order.quantity"></td>
-              <td
-                x-text="formatCurrency(order.avgFillPrice, order.currency || 'USD')"
-              ></td>
-              <td>
-                <span
-                  class="status-badge"
-                  :class="order.status.toLowerCase()"
-                  x-text="order.status"
-                ></span>
-              </td>
-            </tr>
-          </template>
-        </tbody>
-      </table>
-    </div>
-  </section>
 </div>

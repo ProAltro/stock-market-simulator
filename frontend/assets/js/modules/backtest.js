@@ -43,8 +43,116 @@ for i in range(51, len(data)):
     // Watch for timeframe changes to update interval options
     this.$watch('backtestTimeframe', () => this.updateIntervalOptions());
     
+    // Check for Ace every 100ms until loaded
+    const checkAce = setInterval(() => {
+        if (window.ace) {
+            clearInterval(checkAce);
+            ace.config.set('basePath', 'https://cdnjs.cloudflare.com/ajax/libs/ace/1.32.7/');
+            this.initAce();
+        }
+    }, 100);
+
     // Watch for template changes to load code
     this.$watch('selectedTemplate', (val) => this.loadTemplate(val));
+    
+    // Init Ace Editor when page becomes visible
+    this.$watch('currentPage', (val) => {
+        if (val === 'backtest') {
+            // Re-init or resize
+            if (this.aceEditor) {
+                this.aceEditor.resize();
+            } else {
+                this.initAce();
+            }
+        }
+    });
+
+    // If starting on backtest page
+    if (this.currentPage === 'backtest') {
+        setTimeout(() => this.initAce(), 100);
+    }
+    
+    // Watch for external code changes (e.g. template load)
+    this.$watch('backtestCode', (val) => {
+        if (this.aceEditor && this.aceEditor.getValue() !== val) {
+            this.aceEditor.setValue(val, -1);
+        }
+    });
+  },
+
+  aceEditor: null,
+
+  initAce() {
+    if (this.aceEditor) {
+        this.aceEditor.resize();
+        this.aceEditor.focus();
+        return;
+    }
+
+    try {
+        if (!window.ace) {
+            console.warn("Ace Editor not loaded yet");
+            const el = document.getElementById("backtest-code-editor");
+            if (el) el.innerHTML = '<div style="padding:20px;color:#ef5350;">Failed to load code editor. Please refresh the page.</div>';
+            return;
+        }
+
+        const el = document.getElementById("backtest-code-editor");
+        if (!el) return;
+
+        // Clear any previous error message
+        el.innerHTML = "";
+
+        // Explicitly set all paths
+        const cdnBase = 'https://cdnjs.cloudflare.com/ajax/libs/ace/1.32.7/';
+        ace.config.set('basePath', cdnBase);
+        ace.config.set('modePath', cdnBase);
+        ace.config.set('themePath', cdnBase);
+        ace.config.set('workerPath', cdnBase);
+
+        this.aceEditor = ace.edit(el); // Pass element directly
+        this.aceEditor.setTheme("ace/theme/monokai");
+        this.aceEditor.session.setMode("ace/mode/python");
+        this.aceEditor.setOptions({
+            fontSize: "14px",
+            fontFamily: "'JetBrains Mono', 'Consolas', monospace",
+            showPrintMargin: false,
+            showGutter: true,
+            highlightActiveLine: true,
+            displayIndentGuides: true,
+        });
+
+        // Set initial value
+        this.aceEditor.setValue(this.backtestCode || "", -1);
+
+        // Bind changes: Editor -> State
+        this.aceEditor.session.on('change', () => {
+             this.backtestCode = this.aceEditor.getValue();
+        });
+        
+        // Handle window resize
+        window.addEventListener('resize', () => {
+            if (this.currentPage === 'backtest' && this.aceEditor) {
+                this.aceEditor.resize();
+            }
+        });
+
+        // Use ResizeObserver to handle container visibility changes
+        const resizeObserver = new ResizeObserver(() => {
+            if (this.aceEditor) {
+                this.aceEditor.resize();
+            }
+        });
+        resizeObserver.observe(el);
+
+        // Safety resize
+        setTimeout(() => this.aceEditor.resize(), 500);
+
+    } catch (e) {
+        console.error("Failed to init Ace editor:", e);
+        const el = document.getElementById("backtest-code-editor");
+        if (el) el.innerHTML = `<div style="padding:20px;color:#ef5350;">Editor Error: ${e.message}</div>`;
+    }
   },
 
   updateIntervalOptions() {

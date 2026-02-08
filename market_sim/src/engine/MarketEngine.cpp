@@ -2,6 +2,7 @@
 #include "utils/Logger.hpp"
 #include "utils/Random.hpp"
 #include <algorithm>
+#include <cmath>
 
 namespace market {
 
@@ -97,19 +98,20 @@ namespace market {
         }
 
         // 1. Generate and process news
-        auto news = newsGenerator_.generate(simTime);
+        double tickScale = simClock_.getTickScale();
+        auto news = newsGenerator_.generate(simTime, tickScale);
         processNews(news);
 
         // 2. Decay agent sentiments (once per tick, not per news event)
         for (auto& agent : agents_) {
-            agent->decaySentiment();
+            agent->decaySentiment(tickScale);
         }
 
         // 3. Update macro environment
-        macroEnv_.update();
+        macroEnv_.update(tickScale);
 
         // 4. Update fundamental values
-        updateFundamentals();
+        updateFundamentals(tickScale);
 
         // 5. Collect and process agent orders
         processAgentOrders();
@@ -141,6 +143,7 @@ namespace market {
         state.currentTime = simClock_.currentTimestamp();
         state.globalSentiment = macroEnv_.getGlobalSentiment();
         state.interestRate = macroEnv_.getInterestRate();
+        state.tickScale = simClock_.getTickScale();
         state.recentNews = recentNews_;
 
         for (const auto& [symbol, asset] : assets_) {
@@ -267,8 +270,8 @@ namespace market {
         }
     }
 
-    void MarketEngine::updateFundamentals() {
-        double globalShock = macroEnv_.getGlobalShock();
+    void MarketEngine::updateFundamentals(double tickScale) {
+        double globalShock = macroEnv_.getGlobalShock(tickScale);
 
         // Read all params from RuntimeConfig (falls back to defaults if null)
         double annualGrowth = rtConfig_ ? rtConfig_->engine.annualGrowthRate : 0.08;
@@ -280,6 +283,7 @@ namespace market {
 
         int tpd = simClock_.getTicksPerDay();
         double dailyGrowthPerTick = (annualGrowth / 252.0) / static_cast<double>(tpd);
+        double sqrtTS = std::sqrt(tickScale);
 
         for (auto& [symbol, asset] : assets_) {
             // Industry shock: SCALE the accumulated value (fixes 10^30 blow-up)
@@ -289,8 +293,8 @@ namespace market {
                 industryShock = it->second * indShockScale;
             }
 
-            // Company-specific shock: news-driven + small random
-            double companyShock = Random::normal(0, companyShockStd);
+            // Company-specific shock: news-driven + small random (noise scaled)
+            double companyShock = Random::normal(0, companyShockStd * sqrtTS);
             auto cit = companyShocks_.find(symbol);
             if (cit != companyShocks_.end()) {
                 companyShock += cit->second * newsScale;
@@ -299,12 +303,12 @@ namespace market {
             asset->updateFundamental(globalShock, industryShock, companyShock, dailyGrowthPerTick);
         }
 
-        // Decay shocks
+        // Decay shocks — use pow(decay, tickScale) so half-life stays constant in days
         for (auto& [industry, shock] : industryShocks_) {
-            shock *= indShockDecay;
+            shock *= std::pow(indShockDecay, tickScale);
         }
         for (auto& [symbol, shock] : companyShocks_) {
-            shock *= compShockDecay;
+            shock *= std::pow(compShockDecay, tickScale);
         }
     }
 

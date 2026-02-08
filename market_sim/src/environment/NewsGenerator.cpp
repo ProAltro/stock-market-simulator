@@ -66,7 +66,7 @@ namespace market {
         return symbols_.back();
     }
 
-    std::vector<NewsEvent> NewsGenerator::generate(Timestamp currentTime) {
+    std::vector<NewsEvent> NewsGenerator::generate(Timestamp currentTime, double tickScale) {
         std::vector<NewsEvent> events;
 
         // Add any injected news first
@@ -77,7 +77,8 @@ namespace market {
         }
 
         // Generate random news based on Poisson process
-        int numEvents = Random::poisson(lambda_);
+        // Scale lambda so expected events per *day* is constant regardless of ticks/day
+        int numEvents = Random::poisson(lambda_ * tickScale);
 
         for (int i = 0; i < numEvents; ++i) {
             double r = Random::uniform(0, 1);

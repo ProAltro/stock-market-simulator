@@ -6,6 +6,7 @@
 #include "MarketMaker.hpp"
 #include "utils/Random.hpp"
 #include <algorithm>
+#include <cmath>
 
 namespace market {
 
@@ -83,15 +84,16 @@ namespace market {
         }
     }
 
-    void Agent::decaySentiment() {
+    void Agent::decaySentiment(double tickScale) {
         // Decay all sentiment levels once per tick
+        // Use pow(decay, tickScale) so half-life stays constant in days
         double dg = rtConfig_ ? rtConfig_->agentGlobal.sentimentDecayGlobal : 0.95;
         double di = rtConfig_ ? rtConfig_->agentGlobal.sentimentDecayIndustry : 0.93;
         double ds = rtConfig_ ? rtConfig_->agentGlobal.sentimentDecaySymbol : 0.90;
 
-        sentimentBias_ *= dg;
-        for (auto& [_, val] : industrySentiment_) { val *= di; }
-        for (auto& [_, val] : symbolSentiment_) { val *= ds; }
+        sentimentBias_ *= std::pow(dg, tickScale);
+        for (auto& [_, val] : industrySentiment_) { val *= std::pow(di, tickScale); }
+        for (auto& [_, val] : symbolSentiment_) { val *= std::pow(ds, tickScale); }
     }
 
     double Agent::getCombinedSentiment(const std::string& symbol, const std::string& industry) const {

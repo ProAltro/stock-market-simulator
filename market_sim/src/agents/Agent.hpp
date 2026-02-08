@@ -25,7 +25,7 @@ namespace market {
         virtual void updateBeliefs(const NewsEvent& news);
 
         // Decay all sentiment once per tick (called from MarketEngine)
-        virtual void decaySentiment();
+        virtual void decaySentiment(double tickScale = 1.0);
 
         // Agent type identifier
         virtual std::string getType() const = 0;

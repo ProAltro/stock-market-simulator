@@ -46,33 +46,59 @@ export async function register(fastify, opts) {
         return reply.code(404).send({ error: "Account not found" });
       }
 
-      // Get instrument
-      const instrument = await fastify.prisma.instrument.findUnique({
-        where: { symbol: symbol.toUpperCase() },
+      const upperSymbol = symbol.toUpperCase();
+
+      // Get current market price + currency from a quote call (this also validates the symbol exists)
+      let executionPrice;
+      let quoteCurrency = "USD";
+      let quote;
+      try {
+        quote = await getQuote(symbol);
+        executionPrice = new Decimal(quote.price);
+        quoteCurrency = (quote.currency || "USD").toUpperCase();
+      } catch (err) {
+        fastify.log.error("Failed to get market price:", err);
+        return reply
+          .code(502)
+          .send({ error: "Failed to get market price or invalid symbol" });
+      }
+
+      // Get or create instrument
+      let instrument = await fastify.prisma.instrument.findUnique({
+        where: { symbol: upperSymbol },
       });
 
       if (!instrument) {
-        return reply.code(404).send({ error: "Instrument not found" });
-      }
-
-      // Get current market price + currency from a single quote call
-      let executionPrice;
-      let quoteCurrency = "USD";
-      try {
-        const quote = await getQuote(symbol);
-        executionPrice = new Decimal(quote.price);
-        quoteCurrency = (
-          quote.currency ||
-          instrument.currency ||
-          "USD"
-        ).toUpperCase();
-      } catch (err) {
-        fastify.log.error("Failed to get market price:", err);
-        return reply.code(502).send({ error: "Failed to get market price" });
-      }
-
-      // Update instrument currency if it was unknown
-      if (instrument.currency === "USD" && quoteCurrency !== "USD") {
+        // Auto-create instrument from quote data
+        try {
+          instrument = await fastify.prisma.instrument.create({
+            data: {
+              symbol: upperSymbol,
+              name: quote.name || `${upperSymbol} Inc.`,
+              type: "EQUITY",
+              currency: quoteCurrency,
+              exchange: quote.exchange || "NASDAQ",
+              isActive: true,
+            },
+          });
+          fastify.log.info(`Auto-created instrument: ${upperSymbol}`);
+        } catch (dbErr) {
+          // Handle race condition: another request might have just created it
+          if (dbErr.code === "P2002") {
+            instrument = await fastify.prisma.instrument.findUnique({
+              where: { symbol: upperSymbol },
+            });
+            if (!instrument) {
+              return reply
+                .code(500)
+                .send({ error: "Failed to create instrument" });
+            }
+          } else {
+            throw dbErr;
+          }
+        }
+      } else if (instrument.currency === "USD" && quoteCurrency !== "USD") {
+        // Update instrument currency if it was unknown/incorrect
         try {
           await fastify.prisma.instrument.update({
             where: { id: instrument.id },

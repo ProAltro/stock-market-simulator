@@ -98,7 +98,23 @@ export default async function marketSimRoutes(fastify) {
       const res = await fetch(
         `${SIM_URL}/candles/${symbol}?interval=${interval}&since=${since}&limit=${limit}`,
       );
-      return res.json();
+      const raw = await res.json();
+      // C++ engine returns epoch ms — convert to match Yahoo format
+      const intervalEnum = mapIntervalEnum(interval);
+      const isDaily = intervalEnum === "D1";
+      return (Array.isArray(raw) ? raw : []).map((c) => {
+        const epochMs = c.time;
+        return {
+          time: isDaily
+            ? new Date(epochMs).toISOString().split("T")[0]
+            : Math.floor(epochMs / 1000),
+          open: c.open,
+          high: c.high,
+          low: c.low,
+          close: c.close,
+          volume: c.volume,
+        };
+      });
     }
 
     // Serve from DB
@@ -119,15 +135,27 @@ export default async function marketSimRoutes(fastify) {
       take: limit,
     });
 
-    // Return in ascending order
-    return candles.reverse().map((c) => ({
-      time: Number(c.timestamp),
-      open: Number(c.open),
-      high: Number(c.high),
-      low: Number(c.low),
-      close: Number(c.close),
-      volume: Number(c.volume),
-    }));
+    // Return in ascending order, matching Yahoo adapter time format:
+    // - Intraday (M1, M5, M15, H1): Unix seconds (integer)
+    // - Daily (D1): "YYYY-MM-DD" string
+    const isDaily = intervalEnum === "D1";
+    return candles.reverse().map((c) => {
+      const epochMs = Number(c.timestamp);
+      let time;
+      if (isDaily) {
+        time = new Date(epochMs).toISOString().split("T")[0];
+      } else {
+        time = Math.floor(epochMs / 1000);
+      }
+      return {
+        time,
+        open: Number(c.open),
+        high: Number(c.high),
+        low: Number(c.low),
+        close: Number(c.close),
+        volume: Number(c.volume),
+      };
+    });
   });
 
   // === NEW: News history from DB ===

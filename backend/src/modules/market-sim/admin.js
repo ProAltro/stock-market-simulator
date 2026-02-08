@@ -9,6 +9,7 @@ import {
   syncInstruments,
   startSync,
   stopSync,
+  getPopulateStatus,
 } from "../../services/market/simSyncService.js";
 
 const ADMIN_PASSWORD = process.env.SIM_ADMIN_PASSWORD || "manipulation";
@@ -37,11 +38,20 @@ export default async function marketSimAdminRoutes(fastify) {
     return { status: "ok", authenticated: true };
   });
 
-  // GET /status - Sim state (no auth required for read)
+  // GET /status - Sim state + backend sync status
   fastify.get("/status", async () => {
     try {
       const res = await fetch(`${SIM_URL}/state`);
-      return res.json();
+      const simState = await res.json();
+      const backendStatus = getPopulateStatus();
+      
+      // Merge C++ state with backend sync status
+      return {
+        ...simState,
+        backendPhase: backendStatus.phase,
+        backendMessage: backendStatus.message,
+        backendError: backendStatus.error,
+      };
     } catch (err) {
       return { error: "C++ engine unreachable", message: err.message };
     }
@@ -133,14 +143,32 @@ export default async function marketSimAdminRoutes(fastify) {
     }
   });
 
-  // POST /news - Inject news via C++ engine
+  // POST /news - Inject news via C++ engine (with optional AI headline generation)
   fastify.post("/news", async (request, reply) => {
     if (!checkPassword(request, reply)) return;
 
-    const { category, sentiment, magnitude, headline, target, symbol } =
+    const { category, sentiment, magnitude, headline, target, symbol, useAi } =
       request.body || {};
 
     try {
+      let finalHeadline = headline;
+      
+      // If no headline provided and useAi is true, generate one with Pollinations AI
+      if (!headline && useAi) {
+        try {
+          const { generateHeadline } = await import("../../services/ai/pollinationsService.js");
+          finalHeadline = await generateHeadline(
+            (category || "GLOBAL").toUpperCase(),
+            sentiment || "neutral",
+            target || symbol || "",
+            ""  // no fallback, let C++ generate if AI fails
+          );
+        } catch (aiErr) {
+          console.warn("[Admin] AI headline generation failed:", aiErr.message);
+          // C++ will generate a template headline if empty
+        }
+      }
+      
       const res = await fetch(`${SIM_URL}/news`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -148,7 +176,7 @@ export default async function marketSimAdminRoutes(fastify) {
           category: (category || "global").toLowerCase(),
           sentiment,
           magnitude,
-          headline,
+          headline: finalHeadline || "",
           target: target || symbol || "",
         }),
       });

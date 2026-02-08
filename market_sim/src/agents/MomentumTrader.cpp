@@ -38,7 +38,7 @@ namespace market {
         double isW = rtConfig_ ? rtConfig_->momentum.industrySentWeight : 0.1;
         double gsW = rtConfig_ ? rtConfig_->momentum.globalSentWeight : 0.05;
 
-        if (Random::uniform(0, 1) > params_.reactionSpeed * rMult) {
+        if (Random::uniform(0, 1) > params_.reactionSpeed * rMult * state.tickScale) {
             return std::nullopt;
         }
 

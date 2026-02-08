@@ -82,26 +82,7 @@
         </div>
       </div>
 
-      <div id="backtest-code-editor" class="code-editor">
-        <textarea
-          x-model="backtestCode"
-          class="code-textarea"
-          placeholder="# Write your trading strategy here...
-# Available functions:
-#   get_ohlcv(symbol) - Get price data
-#   get_sma(symbol, period) - Get SMA
-#   get_rsi(symbol, period) - Get RSI
-#   buy(symbol, quantity) - Buy shares
-#   sell(symbol, quantity) - Sell shares
-#   get_position(symbol) - Get current position
-#   get_cash() - Get available cash
-
-data = get_ohlcv('AAPL')
-for i in range(20, len(data)):
-    # Your strategy logic here
-    pass"
-        ></textarea>
-      </div>
+      <div id="backtest-code-editor" class="code-editor-ace"></div>
     </div>
 
     <!-- Right Panel: Results -->

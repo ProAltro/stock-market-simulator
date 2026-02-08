@@ -40,6 +40,18 @@ namespace market {
         // Set ticks per day (for populate mode)
         void setTicksPerDay(int tpd) { ticksPerDay_ = tpd; }
 
+        // Set reference (populate) ticks per day for tick-scale computation
+        void setReferenceTicksPerDay(int ref) { referenceTicksPerDay_ = ref; }
+
+        // Tick scale factor: ratio of reference tpd to current tpd.
+        // At populate rate (200 tpd) this is 1.0; at normal rate (72000 tpd)
+        // this is ~0.00278.  Used to normalise per-tick probabilities, noise
+        // stds, and decay rates so that per-*day* behaviour is constant.
+        double getTickScale() const {
+            if (referenceTicksPerDay_ <= 0 || ticksPerDay_ <= 0) return 1.0;
+            return static_cast<double>(referenceTicksPerDay_) / static_cast<double>(ticksPerDay_);
+        }
+
         // Get milliseconds per tick in simulated time
         double getSimMsPerTick() const {
             // A simulated day is 86400000ms, spread over ticksPerDay ticks
@@ -71,6 +83,7 @@ namespace market {
         Timestamp startTimeMs_ = 0;
         Timestamp simTimeMs_ = 0;
         int ticksPerDay_ = 72000;
+        int referenceTicksPerDay_ = 200;  // populate ticks-per-day (tuning reference)
         int tickInDay_ = 0;
         uint64_t totalTicks_ = 0;
     };

@@ -125,7 +125,7 @@ namespace market {
         void processNews(const std::vector<NewsEvent>& news);
 
         // Update asset fundamentals
-        void updateFundamentals();
+        void updateFundamentals(double tickScale = 1.0);
 
         // Collect and process agent orders
         void processAgentOrders();

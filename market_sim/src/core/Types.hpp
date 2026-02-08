@@ -119,6 +119,7 @@ namespace market {
         std::vector<NewsEvent> recentNews;
         double globalSentiment;
         double interestRate;
+        double tickScale = 1.0;   // ratio of ref tpd to current tpd (1.0 in populate mode)
         Timestamp currentTime;
     };
 

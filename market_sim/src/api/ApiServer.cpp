@@ -709,10 +709,9 @@ namespace market {
             res.set_content(jsonResponse(j), "application/json");
             });
 
-        // POST /populate - Populate historical data
+        // POST /populate - Populate historical data (async)
         server_.Post("/populate", [this](const httplib::Request& req, httplib::Response& res) {
             try {
-                std::unique_lock<std::shared_mutex> lock(sim_.getEngineMutex());
                 auto body = nlohmann::json::parse(req.body);
                 int days = body.value("days", 180);
                 std::string startDate = body.value("startDate", "2025-08-07");
@@ -729,12 +728,17 @@ namespace market {
                     return;
                 }
 
-                sim_.populate(days, startDate);
+                // Start populate in background thread
+                std::thread([this, days, startDate]() {
+                    sim_.populate(days, startDate);
+                }).detach();
 
+                // Return immediately - client polls /state for progress
                 res.set_content(jsonResponse({
-                    {"status", "ok"},
+                    {"status", "started"},
+                    {"message", "Population started. Poll /state for progress."},
                     {"days", days},
-                    {"currentDate", sim_.getEngine().getSimClock().currentDateString()}
+                    {"startDate", startDate}
                     }), "application/json");
             }
             catch (const std::exception& e) {

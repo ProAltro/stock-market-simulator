@@ -13,7 +13,7 @@ namespace market {
     {
     }
 
-    void MacroEnvironment::update() {
+    void MacroEnvironment::update(double tickScale) {
         double sMean = rtConfig_ ? rtConfig_->macro.sentimentMean : sentimentMean_;
         double sRev = rtConfig_ ? rtConfig_->macro.sentimentReversion : sentimentReversion_;
         double sNoise = rtConfig_ ? rtConfig_->macro.sentimentNoiseStd : 0.01;
@@ -24,14 +24,17 @@ namespace market {
         double irMin = rtConfig_ ? rtConfig_->macro.interestRateMin : 0.0;
         double irMax = rtConfig_ ? rtConfig_->macro.interestRateMax : 0.15;
 
+        // Scale mean-reversion speed and noise so per-day behaviour is constant
+        double sqrtTS = std::sqrt(tickScale);
+
         // Mean reversion for sentiment
-        double sentimentDrift = sRev * (sMean - globalSentiment_);
-        globalSentiment_ += sentimentDrift + Random::normal(0, sNoise);
+        double sentimentDrift = (sRev * tickScale) * (sMean - globalSentiment_);
+        globalSentiment_ += sentimentDrift + Random::normal(0, sNoise * sqrtTS);
         globalSentiment_ = std::clamp(globalSentiment_, -1.0, 1.0);
 
         // Mean reversion for volatility
-        double volDrift = vRev * (vMean - volatilityIndex_);
-        volatilityIndex_ += volDrift + Random::normal(0, vNoise);
+        double volDrift = (vRev * tickScale) * (vMean - volatilityIndex_);
+        volatilityIndex_ += volDrift + Random::normal(0, vNoise * sqrtTS);
         volatilityIndex_ = std::clamp(volatilityIndex_, 0.05, 1.0);
 
         // Risk index
@@ -39,7 +42,7 @@ namespace market {
         riskIndex_ = std::clamp(riskIndex_, 0.0, 1.0);
 
         // Interest rate slowly mean-reverts
-        interestRate_ += Random::normal(0, irNoise);
+        interestRate_ += Random::normal(0, irNoise * sqrtTS);
         interestRate_ = std::clamp(interestRate_, irMin, irMax);
     }
 
@@ -72,10 +75,11 @@ namespace market {
         volatilityIndex_ = std::clamp(volatilityIndex_, 0.05, 1.0);
     }
 
-    double MacroEnvironment::getGlobalShock() const {
+    double MacroEnvironment::getGlobalShock(double tickScale) const {
         double sw = rtConfig_ ? rtConfig_->macro.globalShockSentimentWeight : 0.0003;
         double ns = rtConfig_ ? rtConfig_->macro.globalShockNoiseStd : 0.0003;
-        return globalSentiment_ * sw + Random::normal(0, ns);
+        double sqrtTS = std::sqrt(tickScale);
+        return globalSentiment_ * sw * tickScale + Random::normal(0, ns * sqrtTS);
     }
 
 } // namespace market

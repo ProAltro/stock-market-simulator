@@ -17,6 +17,7 @@ namespace market {
             M1,     // 1 minute
             M5,     // 5 minutes
             M15,    // 15 minutes
+            M30,    // 30 minutes
             H1,     // 1 hour
             D1      // 1 day
         };

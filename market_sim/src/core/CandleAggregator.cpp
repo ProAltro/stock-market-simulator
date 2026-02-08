@@ -12,7 +12,7 @@ namespace market {
 
     void CandleAggregator::addSymbol(const std::string& symbol) {
         // Initialize candle states for all intervals
-        for (auto interval : { Interval::M1, Interval::M5, Interval::M15, Interval::H1, Interval::D1 }) {
+        for (auto interval : { Interval::M1, Interval::M5, Interval::M15, Interval::M30, Interval::H1, Interval::D1 }) {
             data_[symbol][interval] = CandleState{};
         }
     }
@@ -130,6 +130,7 @@ namespace market {
         case Interval::M1:  return "1m";
         case Interval::M5:  return "5m";
         case Interval::M15: return "15m";
+        case Interval::M30: return "30m";
         case Interval::H1:  return "1h";
         case Interval::D1:  return "1d";
         }
@@ -140,6 +141,7 @@ namespace market {
         if (str == "1m" || str == "M1")  return Interval::M1;
         if (str == "5m" || str == "M5")  return Interval::M5;
         if (str == "15m" || str == "M15") return Interval::M15;
+        if (str == "30m" || str == "M30") return Interval::M30;
         if (str == "1h" || str == "H1")  return Interval::H1;
         if (str == "1d" || str == "D1")  return Interval::D1;
         return Interval::D1;
@@ -150,6 +152,7 @@ namespace market {
         case Interval::M1:  return MS_PER_MINUTE;
         case Interval::M5:  return 5 * MS_PER_MINUTE;
         case Interval::M15: return 15 * MS_PER_MINUTE;
+        case Interval::M30: return 30 * MS_PER_MINUTE;
         case Interval::H1:  return MS_PER_HOUR;
         case Interval::D1:  return MS_PER_DAY;
         }

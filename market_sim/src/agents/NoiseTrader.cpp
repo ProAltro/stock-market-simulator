@@ -33,14 +33,14 @@ namespace market {
         }
     }
 
-    void NoiseTrader::decaySentiment() {
+    void NoiseTrader::decaySentiment(double tickScale) {
         double dg = rtConfig_ ? rtConfig_->noise.sentimentDecay : 0.98;
         double di = rtConfig_ ? rtConfig_->noise.industrySentDecay : 0.97;
         double ds = rtConfig_ ? rtConfig_->noise.symbolSentDecay : 0.95;
 
-        sentimentBias_ *= dg;
-        for (auto& [_, val] : industrySentiment_) val *= di;
-        for (auto& [_, val] : symbolSentiment_)   val *= ds;
+        sentimentBias_ *= std::pow(dg, tickScale);
+        for (auto& [_, val] : industrySentiment_) val *= std::pow(di, tickScale);
+        for (auto& [_, val] : symbolSentiment_)   val *= std::pow(ds, tickScale);
     }
 
     std::optional<Order> NoiseTrader::decide(const MarketState& state) {
@@ -52,7 +52,7 @@ namespace market {
         double bsW = rtConfig_ ? rtConfig_->noise.buyBiasSentWeight : 0.3;
         double bnStd = rtConfig_ ? rtConfig_->noise.buyBiasNoiseStd : 0.1;
 
-        double effectiveProb = tradeProbability_ * (1.0 + std::abs(sentimentBias_));
+        double effectiveProb = tradeProbability_ * (1.0 + std::abs(sentimentBias_)) * state.tickScale;
 
         if (Random::uniform(0, 1) > effectiveProb) {
             return std::nullopt;

@@ -22,7 +22,7 @@ namespace market {
         double sImp = rtConfig_ ? rtConfig_->fundamental.sentimentImpact : 0.15;
         double lpMax = rtConfig_ ? rtConfig_->fundamental.limitPriceSpreadMax : 0.005;
 
-        if (Random::uniform(0, 1) > params_.reactionSpeed * rMult) {
+        if (Random::uniform(0, 1) > params_.reactionSpeed * rMult * state.tickScale) {
             return std::nullopt;
         }
 

@@ -13,8 +13,8 @@ namespace market {
         // RuntimeConfig injection
         void setRuntimeConfig(const RuntimeConfig* cfg) { rtConfig_ = cfg; }
 
-        // Update macro variables
-        void update();
+        // Update macro variables (tickScale normalises per-tick rates)
+        void update(double tickScale = 1.0);
 
         // Apply news impact
         void applyNews(const NewsEvent& news);
@@ -25,8 +25,8 @@ namespace market {
         double getRiskIndex() const { return riskIndex_; }
         double getVolatilityIndex() const { return volatilityIndex_; }
 
-        // Get shock values for fundamental updates
-        double getGlobalShock() const;
+        // Get shock values for fundamental updates (tickScale normalises noise)
+        double getGlobalShock(double tickScale = 1.0) const;
 
         // Setters (for dashboard control)
         void setGlobalSentiment(double val) { globalSentiment_ = val; }

@@ -12,7 +12,7 @@ namespace market {
 
         std::optional<Order> decide(const MarketState& state) override;
         void updateBeliefs(const NewsEvent& news) override;
-        void decaySentiment() override;
+        void decaySentiment(double tickScale = 1.0) override;
         std::string getType() const override { return "Noise"; }
 
     private:

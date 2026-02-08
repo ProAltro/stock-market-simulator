@@ -45,7 +45,7 @@ namespace market {
         double ssW = rtConfig_ ? rtConfig_->meanReversion.sentSymbolWeight : 0.2;
         double sgW = rtConfig_ ? rtConfig_->meanReversion.sentGlobalWeight : 0.1;
 
-        if (Random::uniform(0, 1) > params_.reactionSpeed * rMult) {
+        if (Random::uniform(0, 1) > params_.reactionSpeed * rMult * state.tickScale) {
             return std::nullopt;
         }
 

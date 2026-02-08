@@ -5,7 +5,6 @@ export const marketSimModule = {
   simConnected: false,
   simState: null,
   simAssets: [],
-  simPortfolio: null,
   simOrderBook: null,
   simNews: [],
   selectedSimSymbol: null,
@@ -16,7 +15,7 @@ export const marketSimModule = {
   simSeries: null,
   simChartType: "candle",
   simTimeframe: "1M",
-  simInterval: "H1",
+  simInterval: "auto", // Default to auto (matches Yahoo behavior)
   simCandleData: [],
 
   // Order form
@@ -48,10 +47,10 @@ export const marketSimModule = {
   },
   _pendingDeleteConfirm: false,
   _adminActionLabel: null,
+  _populatePollingInterval: null,
 
   // Initialize
   initMarketSim() {
-    this.fetchSimPortfolio();
     this.startSimPolling();
   },
 
@@ -99,9 +98,29 @@ export const marketSimModule = {
       if (this.selectedSimSymbol) {
         this.fetchSimOrderBook(this.selectedSimSymbol);
       }
+
+      // Fetch news less frequently (every 5th poll = ~5 seconds)
+      if (!this._newsCounter) this._newsCounter = 0;
+      this._newsCounter++;
+      if (this._newsCounter >= 5) {
+        this._newsCounter = 0;
+        this.fetchSimNews();
+      }
     } catch (e) {
       console.error("Failed to fetch sim state:", e);
       this.simConnected = false;
+    }
+  },
+
+  // Fetch news from backend
+  async fetchSimNews() {
+    try {
+      const res = await fetch(`${API_URL}/market-sim/news?limit=20`);
+      if (res.ok) {
+        this.simNews = await res.json();
+      }
+    } catch (e) {
+      console.error("Failed to fetch sim news:", e);
     }
   },
 
@@ -123,28 +142,90 @@ export const marketSimModule = {
     return this.simAssets.find((a) => a.symbol === this.selectedSimSymbol);
   },
 
-  // Timeframe → limit mapping
+  // Timeframe → limit mapping (24h/day, 7 days/week sim market)
+  // Returns base limit for the timeframe, getTimeframeLimitWithBuffer adds extra for zoom-out
   getTimeframeLimit() {
+    const interval = this.getEffectiveInterval();
     const map = {
-      "1D": { M1: 390, M5: 78, M15: 26, H1: 7, D1: 1 },
-      "1W": { M1: 2730, M5: 546, M15: 182, H1: 49, D1: 5 },
-      "1M": { M1: 8000, M5: 2400, M15: 800, H1: 210, D1: 22 },
-      "3M": { M1: 10000, M5: 7200, M15: 2400, H1: 630, D1: 66 },
-      "6M": { M1: 10000, M5: 10000, M15: 4800, H1: 1260, D1: 132 },
+      "1D": { M1: 1440, M5: 288, M15: 96, M30: 48, H1: 24, D1: 1 },
+      "1W": { M1: 10000, M5: 2016, M15: 672, M30: 336, H1: 168, D1: 7 },
+      "1M": { M1: 10000, M5: 8640, M15: 2880, M30: 1440, H1: 720, D1: 30 },
+      "3M": { M1: 10000, M5: 10000, M15: 8640, M30: 4320, H1: 2160, D1: 90 },
+      "6M": { M1: 10000, M5: 10000, M15: 10000, M30: 8640, H1: 4320, D1: 180 },
     };
-    return map[this.simTimeframe]?.[this.simInterval] || 500;
+    return map[this.simTimeframe]?.[interval] || 500;
+  },
+
+  /**
+   * Get limit with 1.5x buffer for zoom-out support
+   * Loads more data than visible so zooming out still has candles
+   */
+  getTimeframeLimitWithBuffer() {
+    const baseLimit = this.getTimeframeLimit();
+    const ZOOM_BUFFER_MULTIPLIER = 1.5;
+    return Math.min(Math.ceil(baseLimit * ZOOM_BUFFER_MULTIPLIER), 10000);
+  },
+
+  /**
+   * Get the effective interval (resolves 'auto' to actual interval)
+   */
+  getEffectiveInterval() {
+    if (this.simInterval === "auto") {
+      return this.getAutoInterval();
+    }
+    return this.simInterval;
+  },
+
+  /**
+   * Get auto-selected interval for current timeframe
+   */
+  getAutoInterval() {
+    const autoMap = {
+      "1D": "M5", // 1 day → 5-minute candles
+      "1W": "M15", // 1 week → 15-minute candles
+      "1M": "D1", // 1 month → daily candles
+      "3M": "D1", // 3 months → daily candles
+      "6M": "D1", // 6 months → daily candles
+    };
+    return autoMap[this.simTimeframe] || "D1";
+  },
+
+  /**
+   * Get available intervals for current timeframe (respecting Yahoo-like data limits)
+   * - M1: only for 1D/1W (7 day limit)
+   * - M5/M15/M30: for 1D/1W/1M/3M (60 day limit)
+   * - H1/D1: all timeframes
+   */
+  getAvailableIntervals() {
+    const availabilityMap = {
+      "1D": ["M1", "M5", "M15", "M30", "H1"], // No D1 for 1 day
+      "1W": ["M1", "M5", "M15", "M30", "H1", "D1"], // All intervals
+      "1M": ["M5", "M15", "M30", "H1", "D1"], // No M1 (exceeds 7 days)
+      "3M": ["H1", "D1"], // Only H1/D1 for 3 months
+      "6M": ["H1", "D1"], // Only H1/D1
+    };
+    return availabilityMap[this.simTimeframe] || ["H1", "D1"];
+  },
+
+  /**
+   * Check if an interval is available for current timeframe
+   */
+  isIntervalAvailable(interval) {
+    if (interval === "auto") return true;
+    return this.getAvailableIntervals().includes(interval);
   },
 
   setSimTimeframe(tf) {
     this.simTimeframe = tf;
+
+    // If current interval is not available for new timeframe, reset to auto
     if (
-      tf === "1D" &&
-      (this.simInterval === "D1" || this.simInterval === "H1")
+      this.simInterval !== "auto" &&
+      !this.isIntervalAvailable(this.simInterval)
     ) {
-      this.simInterval = "M5";
-    } else if (tf === "1W" && this.simInterval === "D1") {
-      this.simInterval = "H1";
+      this.simInterval = "auto";
     }
+
     this.loadSimCandles().then(() => this.initSimChart());
   },
 
@@ -154,13 +235,15 @@ export const marketSimModule = {
   },
 
   // Load candles from backend (DB-backed)
+  // Uses buffered limit (1.5x) for zoom-out support
   async loadSimCandles() {
     if (!this.selectedSimSymbol) return;
 
-    const limit = this.getTimeframeLimit();
+    const interval = this.getEffectiveInterval();
+    const limit = this.getTimeframeLimitWithBuffer(); // Extra data for zoom-out
     try {
       const res = await fetch(
-        `${API_URL}/market-sim/candles/${this.selectedSimSymbol}?interval=${this.simInterval}&limit=${limit}`,
+        `${API_URL}/market-sim/candles/${this.selectedSimSymbol}?interval=${interval}&limit=${limit}`,
       );
       if (res.ok) {
         const data = await res.json();
@@ -194,7 +277,7 @@ export const marketSimModule = {
 
     this.simChart = LightweightCharts.createChart(container, {
       width: container.clientWidth,
-      height: 400,
+      height: 520,
       layout: {
         background: { type: "solid", color: bgDark },
         textColor: textColor,
@@ -270,9 +353,14 @@ export const marketSimModule = {
 
     if (this.simChartType === "candle") {
       const chartData = candles.map((c) => {
-        const t = c.timestamp || c.time;
+        let t = c.timestamp || c.time;
+        // Backend already returns Unix seconds for intraday, "YYYY-MM-DD" for daily.
+        // Fallback: if we still get epoch ms (from live source), convert to seconds.
+        if (typeof t === "number" && t > 1e12) {
+          t = Math.floor(t / 1000);
+        }
         return {
-          time: t > 1e12 ? Math.floor(t / 1000) : t, // ms → seconds for TradingView
+          time: t,
           open: c.open,
           high: c.high,
           low: c.low,
@@ -285,9 +373,12 @@ export const marketSimModule = {
       }
     } else {
       const chartData = candles.map((c) => {
-        const t = c.timestamp || c.time;
+        let t = c.timestamp || c.time;
+        if (typeof t === "number" && t > 1e12) {
+          t = Math.floor(t / 1000);
+        }
         return {
-          time: t > 1e12 ? Math.floor(t / 1000) : t,
+          time: t,
           value: c.close,
         };
       });
@@ -335,22 +426,6 @@ export const marketSimModule = {
         this.simSeries.setData(chartData);
         this.simChart.timeScale().fitContent();
       }
-    }
-  },
-
-  // Fetch portfolio from backend
-  async fetchSimPortfolio() {
-    try {
-      const res = await fetch(`${API_URL}/market-sim/portfolio`, {
-        headers: {
-          Authorization: `Bearer ${localStorage.getItem("decrypt_token")}`,
-        },
-      });
-      if (res.ok) {
-        this.simPortfolio = await res.json();
-      }
-    } catch (e) {
-      console.error("Failed to fetch sim portfolio:", e);
     }
   },
 
@@ -403,7 +478,6 @@ export const marketSimModule = {
         (result.status === "filled" || result.status === "partial")
       ) {
         this.simOrderSuccess = `Order ${result.status}: ${result.filledQuantity} @ $${result.avgFillPrice?.toFixed(2)}`;
-        await this.fetchSimPortfolio();
       } else if (result.error) {
         this.simOrderError = result.error;
       } else {
@@ -431,6 +505,7 @@ export const marketSimModule = {
         this.simAdminAuth = true;
         this.fetchAdminStats();
         this.fetchAdminInstruments();
+        this.checkPopulateStatus(); // Resume progress display if populate in progress
       } else {
         this.simAdminError = data.error || "Authentication failed";
       }
@@ -481,7 +556,7 @@ export const marketSimModule = {
 
   async adminPopulate() {
     this.adminLoading = true;
-    this._adminActionLabel = "Populating 6 months of history...";
+    this._adminActionLabel = "Starting population...";
     this.adminMessage = null;
     this.adminError = null;
     try {
@@ -492,16 +567,84 @@ export const marketSimModule = {
       });
       const data = await res.json();
       if (res.ok) {
-        this.adminMessage = data.message || "Population complete";
-        this.fetchAdminStats();
+        // Start polling for progress
+        this._startPopulatePolling();
       } else {
         this.adminError = data.error || "Failed";
+        this.adminLoading = false;
+        this._adminActionLabel = null;
       }
     } catch (e) {
       this.adminError = "Request failed: " + e.message;
-    } finally {
       this.adminLoading = false;
       this._adminActionLabel = null;
+    }
+  },
+
+  _startPopulatePolling() {
+    if (this._populatePollingInterval) {
+      clearInterval(this._populatePollingInterval);
+    }
+    this._populatePollingInterval = setInterval(async () => {
+      try {
+        const res = await fetch(`${API_URL}/market-sim/admin/status`);
+        if (res.ok) {
+          const state = await res.json();
+
+          // Check backend phase first (covers syncing phase after C++ completes)
+          if (state.backendPhase === "syncing") {
+            this._adminActionLabel =
+              state.backendMessage || "Syncing to database...";
+          } else if (state.populating) {
+            // C++ is still populating
+            const day = state.populateCurrentDay || 0;
+            const total = state.populateTargetDays || 180;
+            const date = state.simDate || "";
+            this._adminActionLabel = `Populating day ${day}/${total} (${date})`;
+          } else if (state.backendPhase === "idle") {
+            // Fully complete
+            this._stopPopulatePolling();
+            this.adminLoading = false;
+            this._adminActionLabel = null;
+            if (state.backendError) {
+              this.adminError = state.backendError;
+            } else {
+              this.adminMessage = "Population complete!";
+            }
+            this.fetchAdminStats();
+          }
+        }
+      } catch (e) {
+        console.error("Error polling populate status:", e);
+      }
+    }, 500);
+  },
+
+  _stopPopulatePolling() {
+    if (this._populatePollingInterval) {
+      clearInterval(this._populatePollingInterval);
+      this._populatePollingInterval = null;
+    }
+  },
+
+  // Check if populate is in progress on page load
+  async checkPopulateStatus() {
+    try {
+      const res = await fetch(`${API_URL}/market-sim/admin/status`);
+      if (res.ok) {
+        const state = await res.json();
+        // Resume polling if C++ is populating or backend is syncing
+        if (
+          state.populating ||
+          state.backendPhase === "populating" ||
+          state.backendPhase === "syncing"
+        ) {
+          this.adminLoading = true;
+          this._startPopulatePolling();
+        }
+      }
+    } catch (e) {
+      console.error("Error checking populate status:", e);
     }
   },
 
@@ -615,9 +758,33 @@ export const marketSimModule = {
   // Helper for large numbers
   formatLargeNumber(n) {
     if (n >= 1e12) return (n / 1e12).toFixed(1) + "T";
-    if (n >= 1e9) return (n / 1e9).toFixed(1) + "B";
-    if (n >= 1e6) return (n / 1e6).toFixed(1) + "M";
+    if (n >= 1e9) return (n / 1e9).toFixed(2) + "B";
+    if (n >= 1e6) return (n / 1e6).toFixed(2) + "M";
     if (n >= 1e3) return (n / 1e3).toFixed(1) + "K";
     return n.toString();
+  },
+
+  // Format news timestamp
+  formatNewsDate(timestamp) {
+    if (!timestamp) return "";
+    const date = new Date(Number(timestamp));
+    const now = new Date();
+    const diffMs = now - date;
+
+    // If less than 24 hours, show relative time
+    if (diffMs < 24 * 60 * 60 * 1000) {
+      if (diffMs < 60 * 1000) return "Just now";
+      if (diffMs < 60 * 60 * 1000)
+        return Math.floor(diffMs / (60 * 1000)) + "m ago";
+      return Math.floor(diffMs / (60 * 60 * 1000)) + "h ago";
+    }
+
+    // Otherwise show date
+    return date.toLocaleDateString(undefined, {
+      month: "short",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
   },
 };

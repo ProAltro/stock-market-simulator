@@ -32,6 +32,10 @@ namespace market {
     }
 
     std::optional<Order> MarketMaker::decide(const MarketState& state) {
+        // Scale activity by tickScale so per-day order count stays constant
+        if (state.tickScale < 1.0 && Random::uniform(0.0, 1.0) > state.tickScale) {
+            return std::nullopt;
+        }
         auto quotes = quoteMarket(state);
         if (!quotes.empty()) {
             return quotes[Random::uniformInt(0, quotes.size() - 1)];

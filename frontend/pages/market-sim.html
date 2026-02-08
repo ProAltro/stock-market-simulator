@@ -1,5 +1,9 @@
 <!-- Market Simulation Page -->
-<div x-show="currentPage === 'market-sim'" class="page market-sim-page">
+<div
+  x-show="currentPage === 'market-sim'"
+  class="page market-sim-page"
+  x-data="{ showAllAssets: false }"
+>
   <header class="page-header">
     <h1>MARKET SIMULATION</h1>
     <div class="sim-controls">
@@ -14,58 +18,15 @@
   </header>
 
   <div class="sim-layout">
-    <!-- Left Panel: Assets & Portfolio -->
+    <!-- Left Panel: Assets -->
     <div class="sim-left-panel">
-      <!-- Portfolio Summary -->
-      <div class="card">
-        <h2>Sim Portfolio</h2>
-        <div class="stats-grid" style="grid-template-columns: 1fr 1fr">
-          <div class="stat-card">
-            <span class="stat-label">Cash</span>
-            <span
-              class="stat-value"
-              x-text="formatCurrency(simPortfolio?.cashBalance || 100000, 'USD')"
-            ></span>
-          </div>
-          <div class="stat-card">
-            <span class="stat-label">Total Value</span>
-            <span
-              class="stat-value"
-              x-text="formatCurrency(simPortfolio?.totalValue || 100000, 'USD')"
-            ></span>
-          </div>
-        </div>
-        <div
-          class="positions-list"
-          x-show="simPortfolio?.positions?.length > 0"
-        >
-          <template x-for="pos in simPortfolio?.positions || []" :key="pos.id">
-            <div class="position-item">
-              <div class="position-info">
-                <span
-                  class="symbol"
-                  x-text="pos.instrument?.symbol || pos.instrumentId"
-                ></span>
-                <span class="qty" x-text="pos.quantity + ' shares'"></span>
-              </div>
-              <div class="position-value">
-                <span
-                  class="pnl"
-                  :class="{ positive: pos.unrealizedPnl >= 0, negative: pos.unrealizedPnl < 0 }"
-                  x-text="formatCurrency(pos.unrealizedPnl || 0, 'USD')"
-                ></span>
-              </div>
-            </div>
-          </template>
-        </div>
-      </div>
-
-      <!-- Asset Prices -->
+      <!-- Asset Prices (5 visible + expand) -->
       <div class="card">
         <h2>Sim Assets</h2>
         <div class="watchlist">
-          <template x-for="asset in simAssets" :key="asset.symbol">
+          <template x-for="(asset, idx) in simAssets" :key="asset.symbol">
             <div
+              x-show="idx < 5 || showAllAssets || selectedSimSymbol === asset.symbol"
               class="watchlist-item"
               :class="{ selected: selectedSimSymbol === asset.symbol }"
               @click="selectSimAsset(asset.symbol)"
@@ -87,127 +48,19 @@
               </div>
             </div>
           </template>
+          <button
+            x-show="simAssets.length > 5"
+            @click="showAllAssets = !showAllAssets"
+            class="show-more-btn"
+            x-text="showAllAssets ? 'Show less ▲' : ('Show all ' + simAssets.length + ' ▼')"
+          ></button>
           <div x-show="simAssets.length === 0" class="empty-state">
             No assets loaded
           </div>
         </div>
       </div>
-    </div>
 
-    <!-- Center: Chart & Order Book -->
-    <div class="sim-center-panel">
-      <!-- Price Chart -->
-      <div class="card">
-        <div class="chart-header">
-          <div class="chart-header-left">
-            <h2 x-text="selectedSimSymbol || 'Select an asset'"></h2>
-            <span
-              class="chart-company-name"
-              x-text="getSelectedAsset()?.name || ''"
-            ></span>
-          </div>
-          <div class="chart-controls">
-            <div class="timeframe-btns">
-              <template x-for="tf in ['1D','1W','1M','3M','6M']" :key="tf">
-                <button
-                  type="button"
-                  @click="setSimTimeframe(tf)"
-                  :class="{ active: simTimeframe === tf }"
-                  class="tf-btn"
-                  x-text="tf"
-                ></button>
-              </template>
-            </div>
-            <select
-              class="interval-select"
-              x-model="simInterval"
-              @change="loadSimCandles()"
-            >
-              <option value="M1">1m</option>
-              <option value="M5">5m</option>
-              <option value="M15">15m</option>
-              <option value="H1">1h</option>
-              <option value="D1">1d</option>
-            </select>
-            <div class="chart-type-btns">
-              <button
-                type="button"
-                @click="setSimChartType('line')"
-                :class="{ active: simChartType === 'line' }"
-                class="chart-type-btn"
-              >
-                Line
-              </button>
-              <button
-                type="button"
-                @click="setSimChartType('candle')"
-                :class="{ active: simChartType === 'candle' }"
-                class="chart-type-btn"
-              >
-                Candle
-              </button>
-            </div>
-          </div>
-        </div>
-        <div class="chart-price-detail">
-          <span
-            class="chart-price-value"
-            x-text="formatCurrency(getSimAssetPrice(selectedSimSymbol), 'USD')"
-          ></span>
-          <span
-            class="chart-price-change"
-            :class="{ positive: (getSelectedAsset()?.change || 0) >= 0, negative: (getSelectedAsset()?.change || 0) < 0 }"
-            x-text="formatPercent((getSelectedAsset()?.change || 0) * 100)"
-          ></span>
-          <span
-            class="chart-sector"
-            x-text="getSelectedAsset()?.sectorDetail || ''"
-          ></span>
-        </div>
-        <div id="sim-chart-container" class="chart-placeholder"></div>
-        <div class="chart-company-info" x-show="getSelectedAsset()?.character">
-          <p
-            class="company-description"
-            x-text="getSelectedAsset()?.character || ''"
-          ></p>
-        </div>
-      </div>
-
-      <!-- Order Book -->
-      <div class="card">
-        <h2>Order Book</h2>
-        <div class="orderbook-grid" x-show="simOrderBook">
-          <div class="orderbook-side">
-            <div class="side-header">BIDS</div>
-            <template x-for="bid in simOrderBook?.bids || []" :key="bid.price">
-              <div class="orderbook-level bid">
-                <span class="price" x-text="bid.price.toFixed(2)"></span>
-                <span class="qty" x-text="bid.quantity"></span>
-              </div>
-            </template>
-          </div>
-          <div class="orderbook-spread">
-            <span
-              x-text="'Spread: ' + (simOrderBook?.spread?.toFixed(2) || '-')"
-            ></span>
-          </div>
-          <div class="orderbook-side">
-            <div class="side-header">ASKS</div>
-            <template x-for="ask in simOrderBook?.asks || []" :key="ask.price">
-              <div class="orderbook-level ask">
-                <span class="price" x-text="ask.price.toFixed(2)"></span>
-                <span class="qty" x-text="ask.quantity"></span>
-              </div>
-            </template>
-          </div>
-        </div>
-        <div x-show="!simOrderBook" class="empty-state">Select an asset</div>
-      </div>
-    </div>
-
-    <!-- Right Panel: Trading & News -->
-    <div class="sim-right-panel">
-      <!-- Trading Form -->
+      <!-- Trading Form (moved from right panel) -->
       <div class="card">
         <h2>Place Order</h2>
         <form @submit.prevent="placeSimOrder()" class="order-form">
@@ -295,18 +148,131 @@
           </button>
         </form>
       </div>
+    </div>
 
-      <!-- News Feed -->
+    <!-- Center: Chart, Stats, News -->
+    <div class="sim-center-panel">
+      <!-- Price Chart -->
       <div class="card">
-        <h2>News Feed</h2>
-        <div class="news-list">
-          <template x-for="(news, idx) in simNews" :key="idx">
-            <div class="news-item" :class="news.sentiment">
-              <span class="headline" x-text="news.headline"></span>
+        <div class="chart-header">
+          <div class="chart-header-left">
+            <h2 x-text="selectedSimSymbol || 'Select an asset'"></h2>
+            <span
+              class="chart-company-name"
+              x-text="getSelectedAsset()?.name || ''"
+            ></span>
+          </div>
+          <div class="chart-controls">
+            <div class="timeframe-btns">
+              <template x-for="tf in ['1D','1W','1M','3M','6M']" :key="tf">
+                <button
+                  type="button"
+                  @click="setSimTimeframe(tf)"
+                  :class="{ active: simTimeframe === tf }"
+                  class="tf-btn"
+                  x-text="tf"
+                ></button>
+              </template>
             </div>
-          </template>
-          <div x-show="simNews.length === 0" class="empty-state">
-            No recent news
+            <select
+              class="interval-select"
+              x-model="simInterval"
+              @change="loadSimCandles().then(() => initSimChart())"
+            >
+              <option value="auto">Auto</option>
+              <option value="M1" :disabled="!isIntervalAvailable('M1')">
+                1m
+              </option>
+              <option value="M5" :disabled="!isIntervalAvailable('M5')">
+                5m
+              </option>
+              <option value="M15" :disabled="!isIntervalAvailable('M15')">
+                15m
+              </option>
+              <option value="M30" :disabled="!isIntervalAvailable('M30')">
+                30m
+              </option>
+              <option value="H1" :disabled="!isIntervalAvailable('H1')">
+                1h
+              </option>
+              <option value="D1" :disabled="!isIntervalAvailable('D1')">
+                1d
+              </option>
+            </select>
+            <div class="chart-type-btns">
+              <button
+                type="button"
+                @click="setSimChartType('line')"
+                :class="{ active: simChartType === 'line' }"
+                class="chart-type-btn"
+              >
+                Line
+              </button>
+              <button
+                type="button"
+                @click="setSimChartType('candle')"
+                :class="{ active: simChartType === 'candle' }"
+                class="chart-type-btn"
+              >
+                Candle
+              </button>
+            </div>
+          </div>
+        </div>
+        <div class="chart-price-detail">
+          <span
+            class="chart-price-value"
+            x-text="formatCurrency(getSimAssetPrice(selectedSimSymbol), 'USD')"
+          ></span>
+          <span
+            class="chart-price-change"
+            :class="{ positive: (getSelectedAsset()?.change || 0) >= 0, negative: (getSelectedAsset()?.change || 0) < 0 }"
+            x-text="formatPercent((getSelectedAsset()?.change || 0) * 100)"
+          ></span>
+          <span
+            class="chart-sector"
+            x-text="getSelectedAsset()?.sectorDetail || ''"
+          ></span>
+        </div>
+        <div id="sim-chart-container" class="chart-placeholder"></div>
+      </div>
+
+      <!-- News Feed (expanded, full width) -->
+      <div class="sim-news-section">
+        <div class="card sim-news-card">
+          <h2>Market News</h2>
+          <div class="news-list">
+            <template
+              x-for="(news, idx) in simNews.slice().reverse()"
+              :key="idx"
+            >
+              <div class="news-item" :class="news.sentiment">
+                <div class="news-header">
+                  <div class="news-meta">
+                    <span class="news-category" x-text="news.category"></span>
+                    <span
+                      class="news-symbol"
+                      x-show="news.symbol"
+                      x-text="news.symbol"
+                    ></span>
+                    <span
+                      class="news-magnitude"
+                      x-show="news.magnitude"
+                      :class="news.sentiment"
+                      x-text="(news.magnitude * 100).toFixed(1) + '%'"
+                    ></span>
+                  </div>
+                  <span
+                    class="news-time"
+                    x-text="formatNewsDate(news.timestamp)"
+                  ></span>
+                </div>
+                <span class="headline" x-text="news.headline"></span>
+              </div>
+            </template>
+            <div x-show="simNews.length === 0" class="empty-state">
+              No recent news - run the simulation to generate market events
+            </div>
           </div>
         </div>
       </div>
@@ -317,9 +283,20 @@
 <style>
   .market-sim-page .sim-layout {
     display: grid;
-    grid-template-columns: 280px 1fr 320px;
+    grid-template-columns: 280px 1fr;
     gap: 0.5rem;
     height: calc(100vh - 120px);
+  }
+
+  .market-sim-page .sim-left-panel {
+    overflow-y: auto;
+  }
+
+  .market-sim-page .sim-center-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    overflow-y: auto;
   }
 
   .market-sim-page .sim-controls {
@@ -346,6 +323,13 @@
     color: var(--text-muted);
   }
 
+  .market-sim-page .sim-date {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    font-weight: 600;
+  }
+
+  /* Chart header */
   .market-sim-page .chart-header {
     display: flex;
     justify-content: space-between;
@@ -460,69 +444,82 @@
   }
 
   .market-sim-page .chart-placeholder {
-    height: 400px;
+    height: 520px;
     background: var(--bg-primary);
     border: 1px solid var(--border-color);
   }
 
-  .market-sim-page .chart-company-info {
+  /* Bottom row: stats + news */
+  .market-sim-page .sim-bottom-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.5rem;
+  }
+
+  .market-sim-page .sim-stats-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 0.4rem;
+  }
+
+  .market-sim-page .sim-stat {
+    padding: 0.4rem 0.5rem;
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+  }
+
+  .market-sim-page .sim-stat-label {
+    display: block;
+    font-size: 0.6rem;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+  }
+
+  .market-sim-page .sim-stat-value {
+    display: block;
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-top: 0.1rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .market-sim-page .sim-stat-desc {
     margin-top: 0.5rem;
-    padding: 0.5rem;
+    padding-top: 0.4rem;
     border-top: 1px solid var(--border-color);
   }
 
-  .market-sim-page .company-description {
-    font-size: 0.75rem;
+  .market-sim-page .sim-stat-desc p {
+    font-size: 0.7rem;
     color: var(--text-muted);
     line-height: 1.4;
     margin: 0;
   }
 
-  .market-sim-page .sim-date {
-    font-size: 0.75rem;
-    color: var(--text-muted);
-    font-weight: 600;
-  }
-
-  .market-sim-page .orderbook-grid {
-    display: grid;
-    grid-template-columns: 1fr auto 1fr;
-    gap: 0.5rem;
-  }
-
-  .market-sim-page .side-header {
-    font-size: 0.65rem;
-    color: var(--text-muted);
-    text-transform: uppercase;
-    margin-bottom: 0.25rem;
-  }
-
-  .market-sim-page .orderbook-level {
-    display: flex;
-    justify-content: space-between;
-    padding: 0.25rem 0.5rem;
-    font-size: 0.8rem;
-    border: 1px solid transparent;
-  }
-
-  .market-sim-page .orderbook-level.bid {
-    background: rgba(0, 150, 80, 0.1);
-    border-color: var(--green);
-  }
-
-  .market-sim-page .orderbook-level.ask {
-    background: rgba(200, 50, 50, 0.1);
-    border-color: var(--red);
-  }
-
-  .market-sim-page .orderbook-spread {
-    display: flex;
-    align-items: center;
-    justify-content: center;
+  /* Show more assets button */
+  .market-sim-page .show-more-btn {
+    width: 100%;
+    padding: 0.4rem;
     font-size: 0.7rem;
+    border: 1px solid var(--border-color);
+    border-top: none;
+    background: var(--bg-secondary);
     color: var(--text-muted);
+    cursor: pointer;
+    text-align: center;
+    font-family: inherit;
   }
 
+  .market-sim-page .show-more-btn:hover {
+    background: var(--bg-hover);
+    color: var(--text-primary);
+  }
+
+  /* Order form */
   .market-sim-page .order-side-btns {
     display: flex;
     gap: 0.5rem;
@@ -588,8 +585,9 @@
     color: var(--bg-primary);
   }
 
+  /* News */
   .market-sim-page .news-list {
-    max-height: 200px;
+    max-height: 250px;
     overflow-y: auto;
   }
 
@@ -645,5 +643,114 @@
     .market-sim-page .sim-layout {
       grid-template-columns: 1fr;
     }
+    .market-sim-page .sim-bottom-row {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  /* News Feed Styles */
+  .market-sim-page .sim-news-section {
+    grid-column: 1 / -1;
+    margin-top: 0.5rem;
+  }
+
+  .market-sim-page .sim-news-card {
+    height: 100%;
+    min-height: 250px;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .market-sim-page .news-list {
+    flex: 1;
+    overflow-y: auto;
+    padding-right: 0.5rem;
+    max-height: 400px;
+  }
+
+  .market-sim-page .news-item {
+    padding: 0.8rem 1rem;
+    border-left: 3px solid var(--text-muted);
+    margin-bottom: 0.6rem;
+    background: var(--bg-hover);
+    border-radius: 0 6px 6px 0;
+    transition: all 0.2s;
+  }
+
+  .market-sim-page .news-item:hover {
+    background: var(--bg-surface);
+    transform: translateX(2px);
+  }
+
+  .market-sim-page .news-item.positive {
+    border-left-color: var(--green);
+    background: rgba(38, 166, 154, 0.05);
+  }
+
+  .market-sim-page .news-item.negative {
+    border-left-color: var(--red);
+    background: rgba(239, 83, 80, 0.05);
+  }
+
+  .market-sim-page .news-item.neutral {
+    border-left-color: var(--yellow);
+  }
+
+  .market-sim-page .news-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.4rem;
+  }
+
+  .market-sim-page .news-meta {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    font-size: 0.7rem;
+  }
+
+  .market-sim-page .news-category {
+    background: var(--bg-surface);
+    padding: 0.15rem 0.5rem;
+    border-radius: 4px;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    font-size: 0.65rem;
+  }
+
+  .market-sim-page .news-symbol {
+    background: var(--bg-primary);
+    padding: 0.15rem 0.5rem;
+    border-radius: 4px;
+    color: var(--text-primary);
+    font-weight: 700;
+  }
+
+  .market-sim-page .news-magnitude {
+    font-weight: 600;
+    font-size: 0.7rem;
+  }
+
+  .market-sim-page .news-magnitude.positive {
+    color: var(--green);
+  }
+  .market-sim-page .news-magnitude.negative {
+    color: var(--red);
+  }
+
+  .market-sim-page .news-time {
+    color: var(--text-muted);
+    font-size: 0.7rem;
+  }
+
+  .market-sim-page .news-item .headline {
+    font-size: 0.9rem;
+    line-height: 1.4;
+    color: var(--text-main);
+    display: block;
+    font-weight: 500;
   }
 </style>

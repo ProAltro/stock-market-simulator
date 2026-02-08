@@ -4,118 +4,120 @@
     <h1>Profile &amp; Settings</h1>
   </header>
 
-  <div class="profile-grid" x-show="profile">
-    <!-- Account Info -->
-    <section class="card">
-      <h2>ACCOUNT</h2>
-      <div class="profile-info">
-        <div class="info-row">
-          <span class="label">EMAIL</span>
-          <span x-text="profile?.email"></span>
+  <template x-if="profile">
+    <div class="profile-grid">
+      <!-- Account Info -->
+      <section class="card">
+        <h2>ACCOUNT</h2>
+        <div class="profile-info">
+          <div class="info-row">
+            <span class="label">EMAIL</span>
+            <span x-text="profile.email"></span>
+          </div>
+          <div class="info-row">
+            <span class="label">DISPLAY NAME</span>
+            <span x-text="profile.displayName || 'Not set'"></span>
+          </div>
+          <div class="info-row">
+            <span class="label">MODE</span>
+            <span
+              class="mode-badge"
+              :class="profile.accounts?.[0]?.mode?.toLowerCase()"
+              x-text="profile.accounts?.[0]?.mode"
+            ></span>
+          </div>
+          <div class="info-row">
+            <span class="label">BALANCE</span>
+            <span x-text="fmtBase(profile.accounts?.[0]?.cashBalance)"></span>
+          </div>
         </div>
-        <div class="info-row">
-          <span class="label">DISPLAY NAME</span>
-          <span x-text="profile?.displayName || 'Not set'"></span>
-        </div>
-        <div class="info-row">
-          <span class="label">MODE</span>
-          <span
-            class="mode-badge"
-            :class="profile?.accounts?.[0]?.mode?.toLowerCase()"
-            x-text="profile?.accounts?.[0]?.mode"
-          ></span>
-        </div>
-        <div class="info-row">
-          <span class="label">BALANCE</span>
-          <span x-text="fmtBase(profile?.accounts?.[0]?.cashBalance)"></span>
-        </div>
-      </div>
-    </section>
+      </section>
 
-    <!-- Settings -->
-    <section class="card">
-      <h2>SETTINGS</h2>
-      <div class="settings-form">
-        <div class="form-group">
-          <label>CURRENCY</label>
-          <select
-            x-model="profile.currency"
-            @change="updateSettings({ currency: profile.currency })"
-          >
-            <option value="USD">USD ($)</option>
-            <option value="INR">INR (₹)</option>
-            <option value="EUR">EUR (€)</option>
-            <option value="GBP">GBP (£)</option>
-          </select>
-        </div>
-        <div class="form-group">
-          <label>LEADERBOARD</label>
-          <div class="toggle-row">
-            <input
-              type="checkbox"
-              id="leaderboard-toggle"
-              :checked="profile?.showOnLeaderboard"
-              @change="updateSettings({ showOnLeaderboard: $event.target.checked })"
-            />
-            <label for="leaderboard-toggle"
-              >Show on leaderboard (requires RANKED mode)</label
+      <!-- Settings -->
+      <section class="card">
+        <h2>SETTINGS</h2>
+        <div class="settings-form">
+          <div class="form-group">
+            <label>CURRENCY</label>
+            <select
+              x-model="profile.currency"
+              @change="updateSettings({ currency: profile.currency })"
             >
+              <option value="USD">USD ($)</option>
+              <option value="INR">INR (₹)</option>
+              <option value="EUR">EUR (€)</option>
+              <option value="GBP">GBP (£)</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>LEADERBOARD</label>
+            <div class="toggle-row">
+              <input
+                type="checkbox"
+                id="leaderboard-toggle"
+                :checked="profile.showOnLeaderboard"
+                @change="updateSettings({ showOnLeaderboard: $event.target.checked })"
+              />
+              <label for="leaderboard-toggle"
+                >Show on leaderboard (requires RANKED mode)</label
+              >
+            </div>
           </div>
         </div>
-      </div>
-      <p
-        x-show="settingsMessage"
-        class="settings-message"
-        x-text="settingsMessage"
-      ></p>
-    </section>
+        <p
+          x-show="settingsMessage"
+          class="settings-message"
+          x-text="settingsMessage"
+        ></p>
+      </section>
 
-    <!-- Trading Mode -->
-    <section class="card">
-      <h2>TRADING MODE</h2>
-      <div class="mode-selector">
-        <button
-          class="mode-btn"
-          :class="{ active: profile?.accounts?.[0]?.mode === 'STANDARD' }"
-          @click="switchMode('STANDARD')"
-          :disabled="profile?.accounts?.[0]?.mode === 'STANDARD'"
-        >
-          STANDARD
-          <span class="mode-desc">Practice freely, add funds anytime</span>
-        </button>
-        <button
-          class="mode-btn"
-          :class="{ active: profile?.accounts?.[0]?.mode === 'RANKED' }"
-          @click="switchMode('RANKED')"
-          :disabled="profile?.accounts?.[0]?.mode === 'RANKED'"
-        >
-          RANKED
-          <span class="mode-desc">$100k start, compete on leaderboard</span>
-        </button>
-      </div>
-    </section>
-
-    <!-- Account Actions -->
-    <section class="card">
-      <h2>ACCOUNT ACTIONS</h2>
-      <div class="actions-section">
-        <div
-          class="add-funds-section"
-          x-show="profile?.accounts?.[0]?.mode === 'STANDARD'"
-        >
-          <label>ADD FUNDS</label>
-          <div class="add-funds-row">
-            <input type="number" x-model="addFundsAmount" min="1" step="1000" />
-            <button @click="addFunds()">ADD</button>
-          </div>
-        </div>
-        <div class="reset-section">
-          <button class="btn-danger" @click="resetAccount()">
-            RESET ACCOUNT
+      <!-- Trading Mode -->
+      <section class="card">
+        <h2>TRADING MODE</h2>
+        <div class="mode-selector">
+          <button
+            class="mode-btn"
+            :class="{ active: profile.accounts?.[0]?.mode === 'STANDARD' }"
+            @click="switchMode('STANDARD')"
+            :disabled="profile.accounts?.[0]?.mode === 'STANDARD'"
+          >
+            STANDARD
+            <span class="mode-desc">Practice freely, add funds anytime</span>
           </button>
-          <span class="help-text">Deletes all positions and orders</span>
+          <button
+            class="mode-btn"
+            :class="{ active: profile.accounts?.[0]?.mode === 'RANKED' }"
+            @click="switchMode('RANKED')"
+            :disabled="profile.accounts?.[0]?.mode === 'RANKED'"
+          >
+            RANKED
+            <span class="mode-desc">$100k start, compete on leaderboard</span>
+          </button>
         </div>
-      </div>
-    </section>
-  </div>
+      </section>
+
+      <!-- Account Actions -->
+      <section class="card">
+        <h2>ACCOUNT ACTIONS</h2>
+        <div class="actions-section">
+          <div
+            class="add-funds-section"
+            x-show="profile.accounts?.[0]?.mode === 'STANDARD'"
+          >
+            <label>ADD FUNDS</label>
+            <div class="add-funds-row">
+              <input type="number" x-model="addFundsAmount" min="1" step="1000" />
+              <button @click="addFunds()">ADD</button>
+            </div>
+          </div>
+          <div class="reset-section">
+            <button class="btn-danger" @click="resetAccount()">
+              RESET ACCOUNT
+            </button>
+            <span class="help-text">Deletes all positions and orders</span>
+          </div>
+        </div>
+      </section>
+    </div>
+  </template>
 </div>

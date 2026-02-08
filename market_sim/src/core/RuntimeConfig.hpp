@@ -18,7 +18,9 @@ namespace market {
             int    tickRateMs = 50;
             int    maxTicks = 0;       // 0 = unlimited
             int    ticksPerDay = 72000;
-            int    populateTicksPerDay = 500;
+            int    populateTicksPerDay = 576;       // ~2.5 min granularity
+            int    populateFineTicksPerDay = 1440;  // 1 min granularity for last N days
+            int    populateFineDays = 7;            // How many days use fine tick rate
             std::string startDate = "2025-08-07";
         } simulation;
 
@@ -191,11 +193,13 @@ namespace market {
             nlohmann::json j;
 
             j["simulation"] = {
-                {"tickRateMs",          simulation.tickRateMs},
-                {"maxTicks",            simulation.maxTicks},
-                {"ticksPerDay",         simulation.ticksPerDay},
-                {"populateTicksPerDay", simulation.populateTicksPerDay},
-                {"startDate",           simulation.startDate}
+                {"tickRateMs",              simulation.tickRateMs},
+                {"maxTicks",                simulation.maxTicks},
+                {"ticksPerDay",             simulation.ticksPerDay},
+                {"populateTicksPerDay",     simulation.populateTicksPerDay},
+                {"populateFineTicksPerDay", simulation.populateFineTicksPerDay},
+                {"populateFineDays",        simulation.populateFineDays},
+                {"startDate",               simulation.startDate}
             };
 
             j["engine"] = {
@@ -362,6 +366,8 @@ namespace market {
                 get(s, "maxTicks", simulation.maxTicks);
                 get(s, "ticksPerDay", simulation.ticksPerDay);
                 get(s, "populateTicksPerDay", simulation.populateTicksPerDay);
+                get(s, "populateFineTicksPerDay", simulation.populateFineTicksPerDay);
+                get(s, "populateFineDays", simulation.populateFineDays);
                 get(s, "startDate", simulation.startDate);
             }
 
@@ -540,6 +546,8 @@ namespace market {
                 get(s, "max_ticks", simulation.maxTicks);
                 get(s, "ticks_per_day", simulation.ticksPerDay);
                 get(s, "populate_ticks_per_day", simulation.populateTicksPerDay);
+                get(s, "populate_fine_ticks_per_day", simulation.populateFineTicksPerDay);
+                get(s, "populate_fine_days", simulation.populateFineDays);
                 get(s, "start_date", simulation.startDate);
             }
 

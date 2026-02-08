@@ -4,7 +4,9 @@
     "max_ticks": 0,
     "auto_start": false,
     "ticks_per_day": 72000,
-    "populate_ticks_per_day": 200,
+    "populate_ticks_per_day": 576,
+    "populate_fine_ticks_per_day": 1440,
+    "populate_fine_days": 7,
     "start_date": "2025-08-07",
     "stocks_file": "stocks.json"
   },

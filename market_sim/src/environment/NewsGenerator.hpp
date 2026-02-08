@@ -24,7 +24,7 @@ namespace market {
         void setSymbolSectorDetails(const std::map<std::string, std::string>& symbolToSector);
 
         // Generate news events for this tick
-        std::vector<NewsEvent> generate(Timestamp currentTime);
+        std::vector<NewsEvent> generate(Timestamp currentTime, double tickScale = 1.0);
 
         // Inject custom news (from dashboard)
         void injectNews(const NewsEvent& news);
@@ -68,7 +68,7 @@ namespace market {
         std::vector<NewsEvent> recentNews_;
         std::vector<NewsEvent> newsHistory_;  // Larger buffer for sync
         static constexpr size_t MAX_RECENT = 20;
-        static constexpr size_t MAX_HISTORY = 5000;
+        static constexpr size_t MAX_HISTORY = 50000;
 
         NewsEvent generateGlobalNews(Timestamp time);
         NewsEvent generatePoliticalNews(Timestamp time);

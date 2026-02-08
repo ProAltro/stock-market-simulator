@@ -50,6 +50,11 @@ namespace market {
         bool isPopulating() const { return populating_.load(); }
         uint64_t getCurrentTick() const { return currentTick_.load(); }
 
+        // Populate progress
+        int getPopulateTargetDays() const { return populateTargetDays_.load(); }
+        int getPopulateCurrentDay() const { return populateCurrentDay_.load(); }
+        std::string getPopulateStartDate() const;
+
         // Configuration
         void setTickRate(int ms) { tickRateMs_ = ms; }
         int getTickRate() const { return tickRateMs_; }
@@ -82,10 +87,17 @@ namespace market {
         std::atomic<bool> populating_{ false };
         std::atomic<uint64_t> currentTick_{ 0 };
 
+        // Populate progress tracking
+        std::atomic<int> populateTargetDays_{ 0 };
+        std::atomic<int> populateCurrentDay_{ 0 };
+        std::string populateStartDate_;
+
         int tickRateMs_ = 50;
         int maxTicks_ = 0;  // 0 = unlimited
-        int ticksPerDay_ = 72000;       // Normal mode
-        int populateTicksPerDay_ = 100; // Populate mode (fast)
+        int ticksPerDay_ = 72000;           // Normal mode
+        int populateTicksPerDay_ = 576;     // Populate mode (2.5 min granularity)
+        int populateFineTicksPerDay_ = 1440;// Fine populate mode (1 min granularity)
+        int populateFineDays_ = 7;          // How many days use fine tick rate
 
         std::thread simThread_;
 

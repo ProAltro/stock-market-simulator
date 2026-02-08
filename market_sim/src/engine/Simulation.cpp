@@ -40,6 +40,8 @@ namespace market {
         maxTicks_ = rtConfig_.simulation.maxTicks;
         ticksPerDay_ = rtConfig_.simulation.ticksPerDay;
         populateTicksPerDay_ = rtConfig_.simulation.populateTicksPerDay;
+        populateFineTicksPerDay_ = rtConfig_.simulation.populateFineTicksPerDay;
+        populateFineDays_ = rtConfig_.simulation.populateFineDays;
 
         // Logging settings (not in RuntimeConfig – keeps Logger decoupled)
         if (config.contains("logging")) {
@@ -85,6 +87,7 @@ namespace market {
         // Initialize SimClock with normal ticks per day
         std::string startDate = rtConfig_.simulation.startDate;
         engine_.getSimClock().initialize(startDate, ticksPerDay_);
+        engine_.getSimClock().setReferenceTicksPerDay(populateTicksPerDay_);
 
         // Give engine a pointer to our RuntimeConfig
         engine_.setRuntimeConfig(&rtConfig_);
@@ -217,28 +220,87 @@ namespace market {
     void Simulation::populate(int days, const std::string& startDate) {
         Logger::info("Populating {} days of history starting from {}", days, startDate);
         populating_ = true;
+        populateTargetDays_ = days;
+        populateCurrentDay_ = 0;
+        {
+            std::unique_lock<std::shared_mutex> lock(engineMutex_);
+            populateStartDate_ = startDate;
+        }
 
-        // Re-init SimClock for fast populate mode
-        engine_.getSimClock().initialize(startDate, populateTicksPerDay_);
+        // Calculate day boundaries for variable tick rates
+        // Last N days use fine tick rate (1 min granularity), rest use normal rate (2.5 min)
+        int normalDays = std::max(0, days - populateFineDays_);
+        int fineDays = std::min(days, populateFineDays_);
+        
+        Logger::info("Populate plan: {} days @ {} ticks/day, then {} days @ {} ticks/day",
+            normalDays, populateTicksPerDay_, fineDays, populateFineTicksPerDay_);
 
-        int totalTicks = days * populateTicksPerDay_;
-        for (int i = 0; i < totalTicks; ++i) {
-            engine_.tick();
-            currentTick_++;
+        // Phase 1: Normal tick rate for earlier days (2.5 min granularity)
+        if (normalDays > 0) {
+            engine_.getSimClock().initialize(startDate, populateTicksPerDay_);
+            engine_.getSimClock().setReferenceTicksPerDay(populateTicksPerDay_);
 
-            if (i % (populateTicksPerDay_ * 10) == 0) {
-                Logger::info("Populate progress: day {}/{} ({})",
-                    i / populateTicksPerDay_, days,
-                    engine_.getSimClock().currentDateString());
+            int totalTicks = normalDays * populateTicksPerDay_;
+            for (int i = 0; i < totalTicks; ++i) {
+                engine_.tick();
+                currentTick_++;
+
+                // Update progress at each day boundary
+                if (i % populateTicksPerDay_ == 0) {
+                    populateCurrentDay_ = i / populateTicksPerDay_;
+                }
+
+                if (i % (populateTicksPerDay_ * 10) == 0) {
+                    Logger::info("Populate progress: day {}/{} ({})",
+                        i / populateTicksPerDay_, days,
+                        engine_.getSimClock().currentDateString());
+                }
             }
+            Logger::info("Phase 1 complete: {} normal days populated", normalDays);
+        } else {
+            // Initialize clock for fine mode start
+            engine_.getSimClock().initialize(startDate, populateFineTicksPerDay_);
+            engine_.getSimClock().setReferenceTicksPerDay(populateFineTicksPerDay_);
+        }
+
+        // Phase 2: Fine tick rate for last N days (1 min granularity)
+        if (fineDays > 0) {
+            // Switch to fine tick rate
+            engine_.getSimClock().setTicksPerDay(populateFineTicksPerDay_);
+            engine_.getSimClock().setReferenceTicksPerDay(populateFineTicksPerDay_);
+
+            int totalTicks = fineDays * populateFineTicksPerDay_;
+            for (int i = 0; i < totalTicks; ++i) {
+                engine_.tick();
+                currentTick_++;
+
+                // Update progress at each day boundary
+                if (i % populateFineTicksPerDay_ == 0) {
+                    populateCurrentDay_ = normalDays + (i / populateFineTicksPerDay_);
+                }
+
+                if (i % (populateFineTicksPerDay_ * 2) == 0) {
+                    Logger::info("Fine populate progress: day {}/{} ({})",
+                        normalDays + (i / populateFineTicksPerDay_), days,
+                        engine_.getSimClock().currentDateString());
+                }
+            }
+            Logger::info("Phase 2 complete: {} fine days populated", fineDays);
         }
 
         // Switch back to normal mode ticks per day after populating
         engine_.getSimClock().setTicksPerDay(ticksPerDay_);
 
+        populateCurrentDay_ = days;  // Mark complete
         populating_ = false;
+        populateTargetDays_ = 0;
         Logger::info("Populate complete. Current sim date: {}",
             engine_.getSimClock().currentDateString());
+    }
+
+    std::string Simulation::getPopulateStartDate() const {
+        std::shared_lock<std::shared_mutex> lock(engineMutex_);
+        return populateStartDate_;
     }
 
     void Simulation::restore(const nlohmann::json& stateData) {
@@ -352,6 +414,13 @@ namespace market {
         state["paused"] = paused_.load();
         state["populating"] = populating_.load();
         state["tickRateMs"] = tickRateMs_;
+
+        // Populate progress
+        if (populating_.load()) {
+            state["populateTargetDays"] = populateTargetDays_.load();
+            state["populateCurrentDay"] = populateCurrentDay_.load();
+            state["populateStartDate"] = populateStartDate_;
+        }
 
         // Simulated time info
         auto& clock = engine_.getSimClock();

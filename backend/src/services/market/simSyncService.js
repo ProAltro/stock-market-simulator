@@ -10,6 +10,22 @@ const SYNC_INTERVAL_MS = 30_000; // 30 seconds
 let syncTimer = null;
 let lastNewsTimestamp = 0;
 
+// Track populate/sync status for frontend
+let populateStatus = {
+  active: false,
+  phase: "idle", // "populating" | "syncing" | "idle"
+  message: null,
+  error: null,
+};
+
+export function getPopulateStatus() {
+  return { ...populateStatus };
+}
+
+function setPopulateStatus(phase, message = null, error = null) {
+  populateStatus = { active: phase !== "idle", phase, message, error };
+}
+
 /**
  * Initialize sim instruments in DB from the C++ /stocks endpoint
  */
@@ -60,7 +76,33 @@ export async function syncInstruments(prisma) {
 }
 
 /**
+ * Get data retention limit in milliseconds for each interval (matching Yahoo Finance limits)
+ * M1: 7 days, M5/M15/M30: 60 days, H1/D1: unlimited (returns 0)
+ */
+function getDataLimitMs(interval) {
+  const DAY_MS = 24 * 60 * 60 * 1000;
+  const normalized = interval.toUpperCase();
+  
+  switch (normalized) {
+    case "M1":
+      return 7 * DAY_MS;     // 1-minute: 7 days
+    case "M5":
+    case "M15":
+    case "M30":
+      return 60 * DAY_MS;    // 5/15/30-minute: 60 days
+    case "H1":
+    case "D1":
+    default:
+      return 0;              // Hourly/Daily: unlimited
+  }
+}
+
+/**
  * Sync candles from C++ engine for all symbols at a given interval
+ * Respects Yahoo-aligned data limits:
+ * - M1: only last 7 days
+ * - M5/M15/M30: only last 60 days  
+ * - H1/D1: all data
  */
 export async function syncCandles(prisma, interval = "1h") {
   try {
@@ -96,13 +138,36 @@ export async function syncCandles(prisma, interval = "1h") {
     if (!res.ok) return;
     const allCandles = await res.json();
 
+    // Get current sim time to calculate data limits
+    let currentSimTime = Date.now();
+    try {
+      const stateRes = await fetch(`${SIM_URL}/state`);
+      if (stateRes.ok) {
+        const state = await stateRes.json();
+        if (state.simTimeMs) {
+          currentSimTime = state.simTimeMs;
+        }
+      }
+    } catch {
+      // Use current time as fallback
+    }
+
+    // Calculate cutoff timestamp based on interval limits
+    const limitMs = getDataLimitMs(interval);
+    const cutoffTimestamp = limitMs > 0 ? currentSimTime - limitMs : 0;
+
     let count = 0;
     for (const [symbol, candles] of Object.entries(allCandles)) {
       const instId = symbolToId[symbol];
       if (!instId) continue;
       const since = sinceMap[instId] || 0;
 
-      const newCandles = candles.filter((c) => c.time > since);
+      // Filter: only new candles AND within data limit
+      const newCandles = candles.filter((c) => {
+        if (c.time <= since) return false;                  // Already synced
+        if (limitMs > 0 && c.time < cutoffTimestamp) return false;  // Outside limit
+        return true;
+      });
       if (newCandles.length === 0) continue;
 
       // Use createMany to bulk insert
@@ -125,7 +190,8 @@ export async function syncCandles(prisma, interval = "1h") {
     }
 
     if (count > 0) {
-      console.log(`[SimSync] Synced ${count} candles (${interval})`);
+      const limitInfo = limitMs > 0 ? ` (last ${Math.round(limitMs / 86400000)}d only)` : "";
+      console.log(`[SimSync] Synced ${count} candles (${interval})${limitInfo}`);
     }
   } catch (err) {
     console.error("[SimSync] Candle sync failed:", err.message);
@@ -143,7 +209,8 @@ export async function syncNews(prisma) {
       symbolToId[inst.symbol] = inst.id;
     }
 
-    const res = await fetch(`${SIM_URL}/news/history?limit=200`);
+    // Fetch larger history to catch all events during populate
+    const res = await fetch(`${SIM_URL}/news/history?limit=50000`);
     if (!res.ok) return;
     const newsItems = await res.json();
 
@@ -203,6 +270,7 @@ export function startSync(prisma) {
     await syncInstruments(prisma);
     await syncCandles(prisma, "M1");
     await syncCandles(prisma, "M5");
+    await syncCandles(prisma, "M15");
     await syncCandles(prisma, "H1");
     await syncCandles(prisma, "D1");
     await syncNews(prisma);
@@ -213,6 +281,8 @@ export function startSync(prisma) {
   syncTimer = setInterval(async () => {
     try {
       await syncCandles(prisma, "M1");
+      await syncCandles(prisma, "M5");
+      await syncCandles(prisma, "M15");
       await syncCandles(prisma, "H1");
       await syncCandles(prisma, "D1");
       await syncNews(prisma);
@@ -245,36 +315,89 @@ export async function deleteAllSimData(prisma) {
 }
 
 /**
- * Trigger C++ engine to populate, then sync the result
+ * Trigger C++ engine to populate (async), then sync the result
+ * C++ now returns immediately - we poll for completion before syncing
  */
 export async function triggerPopulate(
   prisma,
   days = 180,
   startDate = "2025-08-07",
 ) {
-  const res = await fetch(`${SIM_URL}/populate`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ days, startDate }),
-  });
+  try {
+    setPopulateStatus("populating", "Starting C++ population...");
 
-  if (!res.ok) {
-    const err = await res.json();
-    throw new Error(err.error || "Populate failed");
+    const res = await fetch(`${SIM_URL}/populate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ days, startDate }),
+    });
+
+    if (!res.ok) {
+      const err = await res.json();
+      setPopulateStatus("idle", null, err.error || "Populate failed");
+      throw new Error(err.error || "Populate failed");
+    }
+
+    const result = await res.json();
+
+    // C++ now runs async - poll for completion
+    console.log("[SimSync] Populate started, waiting for completion...");
+    await waitForPopulateComplete();
+
+    // Sync all the generated data
+    setPopulateStatus("syncing", "Syncing candles to database...");
+    console.log("[SimSync] Populate complete, syncing data to DB...");
+    
+    await syncCandles(prisma, "M1");
+    setPopulateStatus("syncing", "Syncing M5 candles...");
+    await syncCandles(prisma, "M5");
+    setPopulateStatus("syncing", "Syncing M15 candles...");
+    await syncCandles(prisma, "M15");
+    setPopulateStatus("syncing", "Syncing M30 candles...");
+    await syncCandles(prisma, "M30");
+    setPopulateStatus("syncing", "Syncing H1 candles...");
+    await syncCandles(prisma, "H1");
+    setPopulateStatus("syncing", "Syncing D1 candles...");
+    await syncCandles(prisma, "D1");
+    setPopulateStatus("syncing", "Syncing news events...");
+    await syncNews(prisma);
+    setPopulateStatus("syncing", "Saving state...");
+    await saveState(prisma);
+
+    setPopulateStatus("idle", "Complete");
+    return result;
+  } catch (err) {
+    setPopulateStatus("idle", null, err.message);
+    throw err;
   }
+}
 
-  const result = await res.json();
+/**
+ * Poll C++ /state until populating becomes false
+ */
+async function waitForPopulateComplete(timeoutMs = 600000) {
+  const startTime = Date.now();
+  const pollInterval = 1000; // 1 second
 
-  // Sync all the generated data
-  await syncCandles(prisma, "M1");
-  await syncCandles(prisma, "M5");
-  await syncCandles(prisma, "M15");
-  await syncCandles(prisma, "H1");
-  await syncCandles(prisma, "D1");
-  await syncNews(prisma);
-  await saveState(prisma);
-
-  return result;
+  while (Date.now() - startTime < timeoutMs) {
+    try {
+      const res = await fetch(`${SIM_URL}/state`);
+      if (res.ok) {
+        const state = await res.json();
+        if (!state.populating) {
+          return state;
+        }
+        // Log progress
+        if (state.populateCurrentDay !== undefined) {
+          console.log(`[SimSync] Populate progress: ${state.populateCurrentDay}/${state.populateTargetDays} (${state.simDate})`);
+        }
+      }
+    } catch (err) {
+      console.error("[SimSync] Error polling state:", err.message);
+    }
+    await new Promise(resolve => setTimeout(resolve, pollInterval));
+  }
+  throw new Error("Populate timed out");
 }
 
 function mapInterval(str) {
@@ -285,6 +408,8 @@ function mapInterval(str) {
     M5: "M5",
     "15m": "M15",
     M15: "M15",
+    "30m": "M30",
+    M30: "M30",
     "1h": "H1",
     H1: "H1",
     "1d": "D1",
