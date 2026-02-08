@@ -4,16 +4,17 @@ A full-featured paper trading platform for learning stock market trading without
 
 ## Features
 
-- 📈 **Real-time Market Data** - Yahoo Finance integration with mock fallback
-- 💰 **Paper Trading** - Trade stocks with virtual cash
-- 👤 **Multiple Profiles** - Switch between Standard and Ranked trading modes
-- 📊 **Portfolio Tracking** - Real-time P&L, positions, and trade history
-- 🏆 **Leaderboard** - Compete with other traders
-- 📉 **TradingView Charts** - Professional candlestick charts
-- 🔐 **JWT Authentication** - Secure user accounts
-- 🧪 **Strategy Backtesting** - Write Python strategies, execute via Judge0 sandbox
-- 🌍 **Multi-Currency Support** - Regional formatting (USD, INR, EUR, GBP, etc.)
-- 📱 **Responsive Design** - Mobile-friendly with collapsible sidebar
+- **Real-time Market Data** - Yahoo Finance integration with mock fallback
+- **Paper Trading** - Trade stocks with virtual cash
+- **Multiple Profiles** - Switch between Standard and Ranked trading modes
+- **Portfolio Tracking** - Real-time P&L, positions, and trade history
+- **Leaderboard** - Compete with other traders
+- **TradingView Charts** - Professional candlestick charts
+- **JWT Authentication** - Secure user accounts
+- **Strategy Backtesting** - Write Python strategies, execute via Judge0 sandbox
+- **Multi-Currency Support** - Regional formatting (USD, INR, EUR, GBP, etc.)
+- **Responsive Design** - Mobile-friendly with collapsible sidebar
+- **Market Simulation** - C++ order-book engine with AI agents
 
 ## Tech Stack
 
@@ -24,6 +25,13 @@ A full-featured paper trading platform for learning stock market trading without
 - **Cache**: Redis
 - **Auth**: JWT
 - **Code Execution**: Judge0 (sandboxed Python)
+
+### Market Simulation
+- **Language**: C++17
+- **Engine**: Limit order book with price-time priority
+- **Agents**: Fundamental, Momentum, Mean Reversion, Noise, Market Maker
+- **Dashboard**: Python (Dash/Plotly) for real-time visualization
+- **API**: REST (cpp-httplib)
 
 ### Frontend
 - **Core**: HTML, CSS, JavaScript
@@ -88,6 +96,7 @@ This project is a Monorepo containing both the backend and frontend.
 decrypt/           <-- Root
 ├── backend/       <-- Node.js API Service
 ├── frontend/      <-- Static Web Application
+├── market_sim/    <-- C++ Market Simulation Engine
 ├── docker/        <-- Docker Configuration
 └── ...
 ```

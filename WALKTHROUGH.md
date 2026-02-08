@@ -15,9 +15,10 @@
 7. [API Documentation](#api-documentation)
 8. [Market Data System](#market-data-system)
 9. [Backtesting System](#backtesting-system)
-10. [Development Workflow](#development-workflow)
-11. [Deployment](#deployment)
-12. [Future Enhancements](#future-enhancements)
+10. [Market Simulation Engine](#market-simulation-engine)
+11. [Development Workflow](#development-workflow)
+12. [Deployment](#deployment)
+13. [Future Enhancements](#future-enhancements)
 
 ---
 
@@ -26,21 +27,23 @@
 **Decrypt** is a full-featured paper trading platform that allows users to practice stock market trading without risking real money. Each user starts with $100,000 in virtual cash and can trade real stocks using live market data.
 
 ### Key Features
-- 📈 Real-time market data (Yahoo Finance with mock fallback)
-- 💰 Paper trading with virtual $100,000
-- 👤 Multiple trading profiles (Standard & Ranked)
-- 📊 Portfolio tracking with real-time P&L
-- 🏆 Public leaderboard system
-- 📉 TradingView professional charts
-- 🔐 JWT-based authentication
-- 🌍 Multi-currency with regional locale formatting
-- 📱 Responsive mobile-first design with collapsible sidebar
-- 🧪 Strategy backtesting with sandboxed Python execution (Judge0)
-- 🚀 Fast and scalable architecture
+- Real-time market data (Yahoo Finance with mock fallback)
+- Paper trading with virtual $100,000
+- Multiple trading profiles (Standard & Ranked)
+- Portfolio tracking with real-time P&L
+- Public leaderboard system
+- TradingView professional charts
+- JWT-based authentication
+- Multi-currency with regional locale formatting
+- Responsive mobile-first design with collapsible sidebar
+- Strategy backtesting with sandboxed Python execution (Judge0)
+- C++ market simulation engine with AI agents
+- Fast and scalable architecture
 
 ### Tech Stack
 - **Backend**: Node.js + Fastify + Prisma + PostgreSQL + Redis
 - **Frontend**: Vanilla JavaScript + Alpine.js + TradingView Charts
+- **Market Simulation**: C++17 engine with limit order book + Python dashboard
 - **Code Execution**: Judge0 (sandboxed Python for backtesting)
 - **Infrastructure**: Docker + Docker Compose
 
@@ -57,9 +60,6 @@ Before you begin, ensure you have installed:
 
 ### Step-by-Step Setup
 
-#### 1. Clone and Navigate
-```bash
-git clone <repository-url>
 #### 1. Clone and Navigate
 ```bash
 git clone <repository-url>
@@ -184,6 +184,25 @@ Visit `http://localhost:3000` (or wherever serve opens it).
 │  Yahoo Finance API │     │  Judge0 Sandbox      │
 │   (Market Data)    │     │  (Backtest Execution)│
 └────────────────────┘     └─────────────────────┘
+
+┌─────────────────────────────────────────┐
+│       Market Simulation Engine (C++)    │
+│  ┌─────────────┐  ┌─────────────────┐   │
+│  │ Order Book  │  │   AI Agents     │   │
+│  │  (matching) │  │  (5 strategies) │   │
+│  └─────────────┘  └─────────────────┘   │
+│         │                               │
+│  ┌─────────────┐  ┌─────────────────┐   │
+│  │ News System │  │   REST API      │   │
+│  │  (events)   │  │  (cpp-httplib)  │   │
+│  └─────────────┘  └─────────────────┘   │
+└─────────────────────────────────────────┘
+       │
+       ▼
+┌─────────────────────┐
+│  Python Dashboard   │
+│  (Dash / Plotly)    │
+└─────────────────────┘
 ```
 
 ### Design Principles
@@ -304,7 +323,7 @@ The database schema is designed for a **real trading platform** with extensibili
 #### Why Decimal(20, 4)?
 Financial calculations require precision. JavaScript's `Number` type uses floating-point arithmetic which can cause rounding errors:
 ```javascript
-0.1 + 0.2 === 0.30000000000000004  // ❌ Bad for money
+0.1 + 0.2 === 0.30000000000000004  // Bad for money
 ```
 We use PostgreSQL `DECIMAL` and Prisma's `Decimal.js` for exact arithmetic.
 
@@ -971,6 +990,112 @@ The backend connects to Judge0 via `JUDGE0_URL=http://judge0-server:2358` (inter
 
 ---
 
+## Market Simulation Engine
+
+The market simulation is a standalone C++17 application that models a multi-agent stock market with a realistic limit order book. It runs independently from the main trading backend and is useful for studying market microstructure, testing agent-based strategies, and generating synthetic market data.
+
+### Architecture
+
+```
+market_sim/
+├── CMakeLists.txt           # Build configuration
+├── config.json              # Simulation parameters
+├── stocks.json              # Asset definitions
+├── src/
+│   ├── main.cpp             # Entry point & CLI
+│   ├── core/                # Types, Asset, OrderBook (price-time priority)
+│   ├── agents/              # Agent strategy implementations
+│   ├── environment/         # News generator, macro conditions
+│   ├── engine/              # MarketEngine tick loop, simulation orchestration
+│   ├── api/                 # REST API server (cpp-httplib)
+│   └── utils/               # Logger, RNG, statistics helpers
+└── dashboard/
+    ├── app.py               # Dash/Plotly real-time dashboard
+    └── requirements.txt
+```
+
+### Agent Types
+
+The simulation includes five heterogeneous agent types, each with distinct trading logic:
+
+| Agent Type | Strategy |
+|------------|----------|
+| **Fundamental** | Estimates intrinsic value and trades on price deviations |
+| **Momentum** | Uses moving-average crossovers to follow trends |
+| **Mean Reversion** | Trades z-score deviations expecting price to revert to the mean |
+| **Noise** | Sentiment-driven random trading that adds realistic liquidity |
+| **Market Maker** | Continuously posts bid/ask quotes, profits from the spread |
+
+### Order Book
+
+The engine uses a **limit order book** with price-time priority matching. Orders are matched in real time as the simulation ticks forward, producing realistic trade execution, bid-ask spreads, and volume profiles.
+
+### News System
+
+A stochastic news generator fires events via a Poisson process at three scopes:
+- **Global** — affects all assets (e.g. interest rate changes)
+- **Industry** — affects a sector (e.g. tech earnings season)
+- **Company** — affects a single asset (e.g. earnings surprise)
+
+News can also be injected manually through the dashboard or the REST API.
+
+### REST API
+
+The C++ engine exposes a REST API (default port 8080) for control and monitoring:
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/health` | GET | Health check |
+| `/state` | GET | Current simulation state |
+| `/assets` | GET | All asset prices and data |
+| `/agents` | GET | Agent population summary |
+| `/metrics` | GET | Simulation metrics |
+| `/orderbook/:symbol` | GET | Order book for a symbol |
+| `/control` | POST | Start / pause / stop / reset |
+| `/news` | POST | Inject a news event |
+| `/config` | POST | Update simulation parameters |
+
+### Python Dashboard
+
+A Dash/Plotly web app (port 8050) provides real-time visualization:
+- **Control Panel** — start, pause, stop, reset, adjust tick rate
+- **Price Charts** — live multi-asset candlestick/line charts
+- **Order Book Viewer** — bid/ask depth visualization
+- **News Injection** — create custom news events with configurable impact
+- **Agent Summary** — population distribution and activity metrics
+- **Parameter Tuning** — adjust news frequency, sentiment, and more
+
+### Building & Running
+
+```bash
+# Build the C++ engine
+cd market_sim
+mkdir build && cd build
+cmake ..
+cmake --build . --config Release
+
+# Run the simulation (auto-starts ticking)
+./Release/market_sim --auto-start
+
+# In another terminal, start the dashboard
+cd market_sim/dashboard
+pip install -r requirements.txt
+python app.py
+```
+
+Open http://localhost:8050 for the dashboard. The engine API is available at http://localhost:8080.
+
+### Configuration
+
+Edit `market_sim/config.json` to customise:
+- Tick rate and simulation speed
+- Number and types of assets
+- Agent population distribution
+- News generation frequency
+- API server port
+
+---
+
 ## Development Workflow
 
 ### Running in Development Mode
@@ -1271,6 +1396,6 @@ For questions or issues:
 
 ---
 
-**Happy Trading! 🚀📈**
+**Happy Trading!**
 
 *Remember: This is paper trading. No real money is at risk. Use this platform to learn and experiment before trading with real capital.*
