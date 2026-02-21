@@ -1,96 +1,42 @@
 import { authModule } from "./modules/auth.js";
-import { portfolioModule } from "./modules/portfolio.js";
-import { ordersModule } from "./modules/orders.js";
-import { marketModule } from "./modules/market.js";
-import { backtestModule } from "./modules/backtest.js";
+import { submissionsModule } from "./modules/submissions.js";
+import { marketModule } from "./modules/marketStatus.js";
 import { routerModule } from "./modules/router.js";
-import { marketSimModule } from "./modules/marketSim.js";
-import { formatCurrency, formatPercent } from "./utils.js";
+import { formatCurrency, formatPercent, formatNumber } from "./utils.js";
 import { API_URL } from "./api.js";
 
-// Make it available globally for Alpine
 window.app = function () {
   return {
-    // State
     loading: true,
     currentPage: "dashboard",
     sidebarOpen: false,
-    displayCurrency: "base", // 'base' = user's currency, 'native' = instrument's currency
+    showAuthModal: false,
 
-    // Mixins
     ...authModule,
-    ...portfolioModule,
-    ...ordersModule,
+    ...submissionsModule,
     ...marketModule,
-    ...backtestModule,
     ...routerModule,
-    ...marketSimModule,
 
-    // Shared Utils
     formatCurrency,
     formatPercent,
-
-    // Currency display helpers
-    toggleDisplayCurrency() {
-      this.displayCurrency =
-        this.displayCurrency === "base" ? "native" : "base";
-    },
-
-    // Format a value with the appropriate currency based on display mode
-    // For account-level values (cash, total value) always use base currency
-    fmtBase(value) {
-      return formatCurrency(value, this.profile?.currency || "USD");
-    },
-
-    // For position-level values, respect the toggle
-    fmtPos(nativeVal, baseVal, nativeCurrency) {
-      if (this.displayCurrency === "native" && nativeCurrency) {
-        return formatCurrency(nativeVal, nativeCurrency);
-      }
-      return formatCurrency(baseVal, this.profile?.currency || "USD");
-    },
+    formatNumber,
 
     async init() {
-      // Auth Init
       await this.initAuth();
-
-      // Router Init
       this.initRouter();
-
-      // Backtest Init (sets up watchers)
-      if (this.initBacktest) {
-        this.initBacktest();
-      }
-
       this.loading = false;
 
-      // Load initial data if logged in
       if (this.user) {
         await this.loadDashboardData();
       }
     },
 
     async loadDashboardData() {
-      await this.fetchProfile();
       await Promise.all([
-        this.fetchPortfolio(),
-        this.fetchOrders(),
-        this.fetchWatchlist(),
         this.fetchLeaderboard(),
+        this.fetchDataInfo(),
+        this.fetchMarketStatus(),
       ]);
-
-      // Load quote for default symbol so trade page shows data immediately
-      // Chart will be initialized when navigating to the trade page
-      if (this.selectedSymbol) {
-        try {
-          const res = await fetch(
-            `${API_URL}/market/quote/${this.selectedSymbol}`,
-          );
-          this.currentQuote = await res.json();
-        } catch (err) {
-          console.error("Failed to fetch initial quote:", err);
-        }
-      }
     },
   };
 };

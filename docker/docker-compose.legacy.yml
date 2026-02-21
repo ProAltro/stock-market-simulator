@@ -1,0 +1,30 @@
+version: "3.8"
+
+services:
+  decrypt:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.single
+    container_name: decrypt-all-in-one
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "8080:8080"
+    volumes:
+      - decrypt_data:/data
+      - decrypt_postgres:/var/lib/postgresql
+      - decrypt_redis:/var/lib/redis
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=postgresql://decrypt:decrypt123@localhost:5432/decrypt?schema=public
+      - REDIS_URL=redis://localhost:6379
+      - JWT_SECRET=${JWT_SECRET:-change-me-in-production}
+      - MARKET_SIM_URL=http://localhost:8080
+      - DATA_DIR=/data
+      - FRONTEND_URL=http://localhost
+    privileged: true
+
+volumes:
+  decrypt_data:
+  decrypt_postgres:
+  decrypt_redis:

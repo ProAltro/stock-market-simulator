@@ -5,11 +5,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta
       name="description"
-      content="Decrypt - Paper Trading Platform for learning stock market trading"
+      content="Decrypt - Algorithmic Trading Competition Platform"
     />
-    <title>Decrypt | Paper Trading Platform</title>
+    <title>Decrypt | Algorithmic Trading Competition</title>
 
-    <!-- Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -17,17 +16,24 @@
       rel="stylesheet"
     />
 
-    <!-- Styles -->
     <link rel="stylesheet" href="/assets/styles.css" />
 
-    <!-- TradingView Lightweight Charts -->
-    <script src="https://unpkg.com/lightweight-charts/dist/lightweight-charts.standalone.production.js"></script>
+    <!-- Monaco Editor AMD loader (same approach as Judge0 IDE) -->
+    <script>
+      var require = {
+        paths: {
+          vs: "https://cdn.jsdelivr.net/npm/monaco-editor@0.44.0/min/vs",
+        },
+      };
+    </script>
+    <script src="https://cdn.jsdelivr.net/npm/monaco-editor@0.44.0/min/vs/loader.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/monaco-editor@0.44.0/min/vs/editor/editor.main.nls.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/monaco-editor@0.44.0/min/vs/editor/editor.main.js"></script>
 
-    <!-- Ace Editor -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/ace/1.32.7/ace.min.js"></script>
+    <!-- TradingView Lightweight Charts -->
+    <script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
   </head>
   <body>
-    <!-- Initial Loading Screen (before templates load) -->
     <div id="initial-loader" class="loading-screen">
       <div class="loader">
         <div class="loader-ring"></div>
@@ -35,22 +41,13 @@
       </div>
     </div>
 
-    <!-- App Root - Templates injected here, then Alpine initializes -->
     <div id="app-root" style="display: none">
-      <!-- Auth Container - Loaded from components/auth-modal.html -->
-      <div id="auth-container"></div>
+      <div x-data="app()" x-init="init()">
+        <div id="auth-container"></div>
 
-      <!-- Main App -->
-      <div x-show="user" x-transition class="app-container">
-        <!-- Sidebar Container - Loaded from components/sidebar.html -->
         <div id="sidebar-container"></div>
 
-        <!-- Mobile hamburger & overlay -->
-        <button
-          class="mobile-menu-btn"
-          @click="sidebarOpen = !sidebarOpen"
-          x-show="user"
-        >
+        <button class="mobile-menu-btn" @click="sidebarOpen = !sidebarOpen">
           &#9776;
         </button>
         <div
@@ -59,25 +56,13 @@
           @click="sidebarOpen = false"
         ></div>
 
-        <!-- Main Content -->
         <main class="main-content">
-          <!-- Pages Container - All pages loaded here -->
           <div id="pages-container"></div>
         </main>
       </div>
     </div>
 
-    <!-- App core logic - must load first to define app() function -->
-    <!-- App core logic - must load first to define app() function -->
-    <script type="module" id="main-script"></script>
-    <script>
-      document.getElementById("main-script").src =
-        "/assets/js/main.js?v=" + Date.now();
-    </script>
-
-    <!-- App Initialization Script -->
     <script type="module">
-      // Load templates first, then Alpine.js
       async function loadTemplate(path, targetSelector, position = "replace") {
         try {
           const response = await fetch(`${path}?refresh=${Date.now()}`);
@@ -116,31 +101,24 @@
 
       async function initApp() {
         try {
-          // Load auth modal
           await loadTemplate(
             "/components/auth-modal.html",
             "#auth-container",
             "replace",
           );
 
-          // Load sidebar
           await loadTemplate(
             "/components/sidebar.html",
             "#sidebar-container",
             "replace",
           );
 
-          // Load all pages
           const pages = [
             "/pages/dashboard.html",
-            "/pages/trade.html",
-            "/pages/portfolio.html",
+            "/pages/compete.html",
             "/pages/leaderboard.html",
-            "/pages/backtest.html",
-            "/pages/profile.html",
+            "/pages/market.html",
             "/pages/docs.html",
-            "/pages/market-sim.html",
-            "/pages/market-sim-admin.html",
           ];
 
           for (const page of pages) {
@@ -149,20 +127,22 @@
 
           console.log("Templates loaded successfully");
 
-          // Add Alpine.js x-data to app root
-          const appRoot = document.getElementById("app-root");
-          appRoot.setAttribute("x-data", "app()");
-          appRoot.setAttribute("x-init", "init()");
-
-          // Hide initial loader, show app
           document.getElementById("initial-loader").style.display = "none";
-          appRoot.style.display = "block";
+          document.getElementById("app-root").style.display = "block";
 
-          // Now load Alpine.js
-          const alpineScript = document.createElement("script");
-          alpineScript.src = "https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js";
-          alpineScript.defer = true;
-          document.head.appendChild(alpineScript);
+          // Load app module (defines window.app) before Alpine initializes
+          await import(`/assets/js/main.js?v=${Date.now()}`);
+
+          // Load Alpine.js and wait for it to be ready
+          await new Promise((resolve, reject) => {
+            const alpineScript = document.createElement("script");
+            alpineScript.src =
+              "https://cdn.jsdelivr.net/npm/alpinejs@3.14.9/dist/cdn.min.js";
+            alpineScript.onload = resolve;
+            alpineScript.onerror = () =>
+              reject(new Error("Failed to load Alpine.js"));
+            document.body.appendChild(alpineScript);
+          });
         } catch (error) {
           console.error("Failed to initialize app:", error);
           document.getElementById("initial-loader").innerHTML = `
@@ -173,7 +153,6 @@
         }
       }
 
-      // Wait for DOM then init
       if (document.readyState === "loading") {
         document.addEventListener("DOMContentLoaded", initApp);
       } else {

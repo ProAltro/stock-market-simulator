@@ -24,6 +24,11 @@ export function formatCurrency(value, currency = "USD") {
     }).format(0);
 
   try {
+    const num = Number(value);
+    // Handle very small numbers that would display as $0.00
+    if (num !== 0 && Math.abs(num) < 0.01) {
+      return `$${num.toExponential(4)}`;
+    }
     const locale = getLocale(currency || "USD");
     return new Intl.NumberFormat(locale, {
       style: "currency",
@@ -42,6 +47,16 @@ export function formatCurrency(value, currency = "USD") {
 
 export function formatPercent(value) {
   if (value === null || value === undefined) return "0.00%";
-  const sign = value >= 0 ? "+" : "";
-  return `${sign}${value.toFixed(2)}%`;
+  const num = Number(value);
+  const sign = num >= 0 ? "+" : "";
+  // Handle very small percentages
+  if (num !== 0 && Math.abs(num) < 0.01) {
+    return `${sign}${num.toExponential(2)}%`;
+  }
+  return `${sign}${num.toFixed(2)}%`;
+}
+
+export function formatNumber(value) {
+  if (value === null || value === undefined) return "0";
+  return new Intl.NumberFormat("en-US").format(value);
 }

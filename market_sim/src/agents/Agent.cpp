@@ -1,9 +1,12 @@
 #include "Agent.hpp"
-#include "FundamentalTrader.hpp"
+#include "SupplyDemandTrader.hpp"
 #include "MomentumTrader.hpp"
 #include "MeanReversionTrader.hpp"
 #include "NoiseTrader.hpp"
 #include "MarketMaker.hpp"
+#include "CrossEffectsTrader.hpp"
+#include "InventoryTrader.hpp"
+#include "EventTrader.hpp"
 #include "utils/Random.hpp"
 #include <algorithm>
 #include <cmath>
@@ -18,6 +21,9 @@ namespace market {
         , params_(params)
         , rtConfig_(rtConfig)
     {
+        if (rtConfig_) {
+            maxShortPosition_ = rtConfig_->agentGlobal.maxShortPosition;
+        }
     }
 
     void Agent::onFill(const Trade& trade) {
@@ -40,7 +46,6 @@ namespace market {
             if (pos.quantity == 0) {
                 portfolio_.erase(trade.symbol);
             }
-            // Allow negative positions (short) — needed for MM short selling
         }
     }
 
@@ -59,54 +64,39 @@ namespace market {
         switch (news.category) {
         case NewsCategory::GLOBAL:
         case NewsCategory::POLITICAL:
-            // Global/political news affects global sentiment directly
             sentimentBias_ += signedImpact;
             break;
 
-        case NewsCategory::INDUSTRY:
-            // Industry news: full weight on industry, 30% spillover to global
-            if (!news.industry.empty()) {
-                industrySentiment_[news.industry] += signedImpact;
+        case NewsCategory::SUPPLY:
+            if (!news.symbol.empty()) {
+                commoditySentiment_[news.symbol] += signedImpact;
             }
-            sentimentBias_ += signedImpact * 0.3;
+            sentimentBias_ += signedImpact * 0.2;
             break;
 
-        case NewsCategory::COMPANY:
-            // Company news: full weight on symbol, 20% on industry, 10% on global
+        case NewsCategory::DEMAND:
             if (!news.symbol.empty()) {
-                symbolSentiment_[news.symbol] += signedImpact;
+                commoditySentiment_[news.symbol] += signedImpact;
             }
-            if (!news.industry.empty()) {
-                industrySentiment_[news.industry] += signedImpact * 0.2;
-            }
-            sentimentBias_ += signedImpact * 0.1;
+            sentimentBias_ += signedImpact * 0.2;
             break;
         }
     }
 
     void Agent::decaySentiment(double tickScale) {
-        // Decay all sentiment levels once per tick
-        // Use pow(decay, tickScale) so half-life stays constant in days
         double dg = rtConfig_ ? rtConfig_->agentGlobal.sentimentDecayGlobal : 0.95;
-        double di = rtConfig_ ? rtConfig_->agentGlobal.sentimentDecayIndustry : 0.93;
-        double ds = rtConfig_ ? rtConfig_->agentGlobal.sentimentDecaySymbol : 0.90;
+        double dc = rtConfig_ ? rtConfig_->agentGlobal.sentimentDecayCommodity : 0.90;
 
         sentimentBias_ *= std::pow(dg, tickScale);
-        for (auto& [_, val] : industrySentiment_) { val *= std::pow(di, tickScale); }
-        for (auto& [_, val] : symbolSentiment_) { val *= std::pow(ds, tickScale); }
+        for (auto& [_, val] : commoditySentiment_) { val *= std::pow(dc, tickScale); }
     }
 
-    double Agent::getCombinedSentiment(const std::string& symbol, const std::string& industry) const {
-        double combined = sentimentBias_ * 0.3;  // Global component
+    double Agent::getCombinedSentiment(const std::string& symbol) const {
+        double combined = sentimentBias_ * 0.4;
 
-        auto indIt = industrySentiment_.find(industry);
-        if (indIt != industrySentiment_.end()) {
-            combined += indIt->second * 0.5;  // Industry component
-        }
-
-        auto symIt = symbolSentiment_.find(symbol);
-        if (symIt != symbolSentiment_.end()) {
-            combined += symIt->second;  // Full company-specific component
+        auto it = commoditySentiment_.find(symbol);
+        if (it != commoditySentiment_.end()) {
+            combined += it->second;
         }
 
         return combined;
@@ -148,7 +138,6 @@ namespace market {
         pos.symbol = symbol;
         pos.quantity += quantity;
         pos.avgCost = price;
-        // Don't deduct cash – this is a simulation bootstrap, not a trade
     }
 
     Order Agent::createOrder(const std::string& symbol,
@@ -157,7 +146,7 @@ namespace market {
         Price price,
         Volume quantity) const {
         Order order;
-        order.id = 0; // Will be assigned by order book
+        order.id = 0;
         order.agentId = id_;
         order.symbol = symbol;
         order.side = side;
@@ -185,8 +174,6 @@ namespace market {
         return std::max(Volume(1), size);
     }
 
-    // AgentFactory implementation
-
     AgentParams AgentFactory::generateParams(const RuntimeConfig* cfg) {
         double raMean = cfg ? cfg->agentGen.riskAversionMean : 1.0;
         double raStd = cfg ? cfg->agentGen.riskAversionStd : 0.3;
@@ -209,8 +196,8 @@ namespace market {
         return params;
     }
 
-    std::unique_ptr<Agent> AgentFactory::createFundamentalTrader(AgentId id, double cash, const RuntimeConfig* cfg) {
-        return std::make_unique<FundamentalTrader>(id, cash, generateParams(cfg), cfg);
+    std::unique_ptr<Agent> AgentFactory::createSupplyDemandTrader(AgentId id, double cash, const RuntimeConfig* cfg) {
+        return std::make_unique<SupplyDemandTrader>(id, cash, generateParams(cfg), cfg);
     }
 
     std::unique_ptr<Agent> AgentFactory::createMomentumTrader(AgentId id, double cash, const RuntimeConfig* cfg) {
@@ -229,12 +216,27 @@ namespace market {
         return std::make_unique<MarketMaker>(id, cash, generateParams(cfg), cfg);
     }
 
+    std::unique_ptr<Agent> AgentFactory::createCrossEffectsTrader(AgentId id, double cash, const RuntimeConfig* cfg) {
+        return std::make_unique<CrossEffectsTrader>(id, cash, generateParams(cfg), cfg);
+    }
+
+    std::unique_ptr<Agent> AgentFactory::createInventoryTrader(AgentId id, double cash, const RuntimeConfig* cfg) {
+        return std::make_unique<InventoryTrader>(id, cash, generateParams(cfg), cfg);
+    }
+
+    std::unique_ptr<Agent> AgentFactory::createEventTrader(AgentId id, double cash, const RuntimeConfig* cfg) {
+        return std::make_unique<EventTrader>(id, cash, generateParams(cfg), cfg);
+    }
+
     std::vector<std::unique_ptr<Agent>> AgentFactory::createPopulation(
-        int numFundamental,
+        int numSupplyDemand,
         int numMomentum,
         int numMeanReversion,
         int numNoise,
         int numMarketMakers,
+        int numCrossEffects,
+        int numInventory,
+        int numEvent,
         double meanCash,
         double stdCash,
         const RuntimeConfig* cfg
@@ -246,8 +248,8 @@ namespace market {
             return std::max(1000.0, Random::normal(meanCash, stdCash));
             };
 
-        for (int i = 0; i < numFundamental; ++i) {
-            agents.push_back(createFundamentalTrader(nextId++, getCash(), cfg));
+        for (int i = 0; i < numSupplyDemand; ++i) {
+            agents.push_back(createSupplyDemandTrader(nextId++, getCash(), cfg));
         }
 
         for (int i = 0; i < numMomentum; ++i) {
@@ -264,6 +266,18 @@ namespace market {
 
         for (int i = 0; i < numMarketMakers; ++i) {
             agents.push_back(createMarketMaker(nextId++, getCash(), cfg));
+        }
+
+        for (int i = 0; i < numCrossEffects; ++i) {
+            agents.push_back(createCrossEffectsTrader(nextId++, getCash(), cfg));
+        }
+
+        for (int i = 0; i < numInventory; ++i) {
+            agents.push_back(createInventoryTrader(nextId++, getCash(), cfg));
+        }
+
+        for (int i = 0; i < numEvent; ++i) {
+            agents.push_back(createEventTrader(nextId++, getCash(), cfg));
         }
 
         return agents;

@@ -35,12 +35,10 @@ namespace market {
 
     void NoiseTrader::decaySentiment(double tickScale) {
         double dg = rtConfig_ ? rtConfig_->noise.sentimentDecay : 0.98;
-        double di = rtConfig_ ? rtConfig_->noise.industrySentDecay : 0.97;
-        double ds = rtConfig_ ? rtConfig_->noise.symbolSentDecay : 0.95;
+        double dc = rtConfig_ ? rtConfig_->noise.commoditySentDecay : 0.95;
 
         sentimentBias_ *= std::pow(dg, tickScale);
-        for (auto& [_, val] : industrySentiment_) val *= std::pow(di, tickScale);
-        for (auto& [_, val] : symbolSentiment_)   val *= std::pow(ds, tickScale);
+        for (auto& [_, val] : commoditySentiment_) val *= std::pow(dc, tickScale);
     }
 
     std::optional<Order> NoiseTrader::decide(const MarketState& state) {
@@ -80,10 +78,10 @@ namespace market {
             }
         }
         else {
-            Volume position = getPosition(symbol);
-            if (position > 0) {
+            Volume maxSellable = getMaxSellable(symbol);
+            if (maxSellable > 0) {
                 double confidence = Random::uniform(cMin, cMax);
-                Volume size = std::min(position, calculateOrderSize(currentPrice, confidence));
+                Volume size = std::min(maxSellable, calculateOrderSize(currentPrice, confidence));
 
                 if (size > 0) {
                     bool useMarket = Random::uniform(0, 1) < mktProb;

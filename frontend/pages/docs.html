@@ -1,77 +1,154 @@
-<div x-show="currentPage === 'docs'" class="page docs-page">
+<div x-show="currentPage === 'api'" class="page docs-page">
   <header class="page-header">
-    <h1>Judge0 API Documentation</h1>
-    <p class="page-subtitle">Reference for creating trading strategies in Python</p>
-    <button @click="navigateTo('backtest')" class="btn btn-secondary">Back to Backtest</button>
+    <h1>Algorithm API Documentation</h1>
+    <p class="page-subtitle">
+      Reference for creating commodity trading algorithms
+    </p>
+    <a
+      href="/docs/"
+      target="_blank"
+      class="btn btn-primary"
+      style="margin-top: 0.5rem; display: inline-block; text-decoration: none"
+    >
+      Full Platform Documentation
+    </a>
   </header>
 
   <div class="docs-content card">
-    <h3>Data Access Functions</h3>
+    <h2>Overview</h2>
+    <p>
+      Your algorithm runs on 1 million ticks of commodity market data. You start
+      with $100,000 cash.
+    </p>
+
+    <h2>Commodities</h2>
+    <ul>
+      <li><strong>OIL</strong> - Crude Oil (Energy)</li>
+      <li><strong>STEEL</strong> - Steel (Construction)</li>
+      <li><strong>WOOD</strong> - Lumber (Construction)</li>
+      <li><strong>BRICK</strong> - Brick (Construction)</li>
+      <li><strong>GRAIN</strong> - Grain (Agriculture)</li>
+    </ul>
+
+    <h2>Data Access Functions</h2>
+
     <div class="api-function">
-      <code>get_ohlcv(symbol, timeframe=None, start_date=None, end_date=None)</code>
-      <p>Get OHLCV data array for a symbol. Returns a list of dictionaries with keys: <code>time</code>, <code>open</code>, <code>high</code>, <code>low</code>, <code>close</code>, <code>volume</code>.</p>
+      <code>get_commodities()</code>
+      <p>
+        Returns list of commodity symbols:
+        <code>['OIL', 'STEEL', 'WOOD', 'BRICK', 'GRAIN']</code>
+      </p>
     </div>
 
-    <h3>Technical Indicators</h3>
     <div class="api-function">
-      <code>get_sma(symbol, period)</code>
-      <p>Get Simple Moving Average (SMA) for the specified period.</p>
+      <code>get_tick_count()</code>
+      <p>Returns total number of ticks: <code>1000000</code></p>
     </div>
+
     <div class="api-function">
-      <code>get_ema(symbol, period)</code>
-      <p>Get Exponential Moving Average (EMA) for the specified period.</p>
+      <code>get_current_tick()</code>
+      <p>Returns the current tick being processed (0 to 999999)</p>
     </div>
+
     <div class="api-function">
-      <code>get_rsi(symbol, period=14)</code>
-      <p>Get Relative Strength Index (RSI). Returns values between 0 and 100.</p>
+      <code>get_ohlcv(symbol, start_tick=None, end_tick=None)</code>
+      <p>Get tick-level OHLCV data for a commodity. Returns list of dicts with keys: <code>tick</code>, <code>open</code>, <code>high</code>, <code>low</code>, <code>close</code>, <code>volume</code></p>
     </div>
+
     <div class="api-function">
-      <code>get_macd(symbol)</code>
-      <p>Get MACD (Moving Average Convergence Divergence). Returns a dict with <code>macd</code>, <code>signal</code>, and <code>histogram</code> arrays.</p>
+      <code>get_orderbook(symbol, tick)</code>
+      <p>
+        Get anonymized orderbook at a specific tick. Returns
+        <code>{bids: [{price, quantity}], asks: [{price, quantity}]}</code>
+      </p>
     </div>
+
     <div class="api-function">
-      <code>get_bollinger(symbol, period=20, std=2)</code>
-      <p>Get Bollinger Bands. Returns a dict with <code>upper</code>, <code>middle</code>, <code>lower</code>, <code>percentB</code>, and <code>bandwidth</code> arrays.</p>
+      <code>get_news(tick)</code>
+      <p>
+        Get news events at a specific tick. Returns list of dicts with keys: <code>symbol</code>, <code>category</code>, <code>sentiment</code>, <code>magnitude</code>, <code>headline</code>
+      </p>
     </div>
+
+    <h2>Price Functions</h2>
+
     <div class="api-function">
-      <code>get_atr(symbol, period=14)</code>
-      <p>Get Average True Range (ATR) for volatility measurement.</p>
+      <code>get_price(symbol, tick=None)</code>
+      <p>
+        Get price for a commodity. If tick is None, returns current tick's
+        price.
+      </p>
     </div>
-    <div class="api-function">
-      <code>get_stochastic(symbol, k_period=14, d_period=3)</code>
-      <p>Get Stochastic Oscillator. Returns a dict with <code>k</code> and <code>d</code> arrays.</p>
-    </div>
-    <div class="api-function">
-      <code>get_adx(symbol, period=14)</code>
-      <p>Get Average Directional Index (ADX). Returns a dict with <code>adx</code>, <code>plusDI</code>, and <code>minusDI</code>.</p>
-    </div>
-    
-    <h3>Trading Functions</h3>
-    <div class="api-function">
-      <code>buy(symbol, quantity, price=None)</code>
-      <p>Buy shares of a symbol. If price is not specified, uses the current close price.</p>
-    </div>
-    <div class="api-function">
-      <code>sell(symbol, quantity, price=None)</code>
-      <p>Sell shares of a symbol. If price is not specified, uses the current close price.</p>
-    </div>
-    
-    <h3>Account & Position Info</h3>
+
+    <h2>Account & Position Functions</h2>
+
     <div class="api-function">
       <code>get_cash()</code>
-      <p>Get current available cash balance.</p>
+      <p>Get current cash balance.</p>
     </div>
+
     <div class="api-function">
       <code>get_positions()</code>
-      <p>Get dictionary of all current positions {symbol: quantity}.</p>
+      <p>Get dict of all positions: <code>{symbol: quantity}</code></p>
     </div>
+
     <div class="api-function">
       <code>get_position(symbol)</code>
-      <p>Get current quantity held for a specific symbol. Returns 0 if no position.</p>
+      <p>Get quantity held for a specific commodity. Returns 0 if none.</p>
     </div>
+
+    <h2>Trading Functions</h2>
+
     <div class="api-function">
-      <code>get_price(symbol)</code>
-      <p>Get the latest known price for a symbol.</p>
+      <code>buy(symbol, quantity)</code>
+      <p>
+        Buy commodity at market price. Returns <code>True</code> if successful,
+        <code>False</code> if insufficient cash.
+      </p>
     </div>
+
+    <div class="api-function">
+      <code>sell(symbol, quantity)</code>
+      <p>
+        Sell commodity at market price. Returns <code>True</code> if successful,
+        <code>False</code> if insufficient position.
+      </p>
+    </div>
+
+    <h2>Example Strategy (Python)</h2>
+    <pre class="code-example">
+# Simple momentum strategy
+def run():
+    symbol = 'OIL'
+    lookback = 100
+    
+    for tick in range(get_tick_count()):
+        # Skip first lookback ticks
+        if tick < lookback:
+            continue
+            
+        # Get recent prices
+        prices = [get_price(symbol, t) for t in range(tick - lookback, tick)]
+        avg_price = sum(prices) / len(prices)
+        current_price = prices[-1]
+        
+        position = get_position(symbol)
+        
+        # Buy if price above average and we have cash
+        if current_price > avg_price * 1.02 and position == 0:
+            qty = int(get_cash() / current_price)
+            if qty > 0:
+                buy(symbol, qty)
+        
+        # Sell if price below average and we have position
+        elif current_price < avg_price * 0.98 and position > 0:
+            sell(symbol, position)
+
+run()
+    </pre>
+
+    <h2>Scoring</h2>
+    <p>Your Final Net Worth = Cash Balance + Σ(Position × Final Price)</p>
+    <p>Leaderboard rankings are based on Final Net Worth after all 1M ticks.</p>
   </div>
 </div>

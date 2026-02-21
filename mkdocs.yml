@@ -1,0 +1,89 @@
+site_name: Decrypt Documentation
+site_description: Documentation for the Decrypt Algorithmic Trading Competition Platform
+site_url: https://localhost/docs/
+docs_dir: docs
+site_dir: frontend/docs
+
+theme:
+  name: material
+  palette:
+    - scheme: slate
+      primary: deep purple
+      accent: amber
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+    - scheme: default
+      primary: deep purple
+      accent: amber
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.expand
+    - navigation.top
+    - search.highlight
+    - search.suggest
+    - content.code.copy
+    - content.tabs.link
+  icon:
+    repo: fontawesome/brands/github
+  font:
+    text: Inter
+    code: JetBrains Mono
+
+plugins:
+  - search
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - tables
+  - attr_list
+  - md_in_html
+  - toc:
+      permalink: true
+
+nav:
+  - Home: index.md
+  - Getting Started:
+      - Quick Start: getting-started/quickstart.md
+      - Project Structure: getting-started/structure.md
+  - Architecture:
+      - Overview: architecture/overview.md
+      - Backend: architecture/backend.md
+      - Frontend: architecture/frontend.md
+  - Market Simulation:
+      - How It Works: market/overview.md
+      - Trading Agents: market/agents.md
+      - Order Book & Matching Engine: market/engine.md
+      - Configuration & Tuning: market/configuration.md
+  - API Reference:
+      - Authentication: api/auth.md
+      - Market Data: api/market.md
+      - Submissions: api/submissions.md
+      - Data Management: api/data.md
+      - Market Sim API: api/market-sim.md
+  - Algorithm Guide:
+      - Writing Algorithms: algorithms/guide.md
+      - Strategy API: algorithms/api.md
+      - Example Strategies: algorithms/examples.md
+  - Deployment:
+      - Docker: deployment/docker.md
+      - Configuration: deployment/configuration.md
+  - Testing:
+      - Running Tests: testing/running-tests.md
+      - Test Coverage: testing/coverage.md

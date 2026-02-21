@@ -1,5 +1,6 @@
 generator client {
-  provider = "prisma-client-js"
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x", "linux-musl"]
 }
 
 datasource db {
@@ -7,268 +8,36 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// User authentication
 model User {
-  id                   String               @id @default(uuid())
-  email                String               @unique
-  passwordHash         String               @map("password_hash")
-  displayName          String?              @map("display_name")
-  isPublic             Boolean              @default(true) @map("is_public")
-  currency             String               @default("USD")
-  showOnLeaderboard    Boolean              @default(false) @map("show_on_leaderboard")
-  activeMode           AccountMode          @default(STANDARD) @map("active_mode")
-  createdAt            DateTime             @default(now()) @map("created_at")
-  updatedAt            DateTime             @updatedAt @map("updated_at")
-  accounts             Account[]
-  oauthProviders       OAuthProvider[]
-  backtestSubmissions  BacktestSubmission[]
+  id           String              @id @default(uuid())
+  email        String              @unique
+  passwordHash String              @map("password_hash")
+  displayName  String?             @map("display_name")
+  createdAt    DateTime            @default(now()) @map("created_at")
+  submissions  AlgorithmSubmission[]
 
   @@map("users")
 }
 
-// OAuth providers for future Google/GitHub login
-model OAuthProvider {
-  id             String   @id @default(uuid())
-  userId         String   @map("user_id")
-  providerName   String   @map("provider_name")
-  providerUserId String   @map("provider_user_id")
-  createdAt      DateTime @default(now()) @map("created_at")
-  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+model AlgorithmSubmission {
+  id              String     @id @default(uuid())
+  userId          String     @map("user_id")
+  language        String     // "python" or "cpp"
+  code            String     @db.Text
+  status          String     @default("pending") // pending, running, completed, failed
+  finalNetWorth   Decimal?   @map("final_net_worth") @db.Decimal(20, 4)
+  cashBalance     Decimal?   @map("cash_balance") @db.Decimal(20, 4)
+  positions       Json?
+  totalTrades     Int?       @map("total_trades")
+  executionTimeMs Int?       @map("execution_time_ms")
+  error           String?    @db.Text
+  stdout          String?    @db.Text
+  createdAt       DateTime   @default(now()) @map("created_at")
+  completedAt     DateTime?  @map("completed_at")
 
-  @@unique([providerName, providerUserId])
-  @@map("oauth_providers")
+  user            User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([finalNetWorth(sort: Desc)])
+  @@index([userId])
+  @@map("algorithm_submissions")
 }
-
-// Trading account (users can have multiple accounts later)
-model Account {
-  id             String      @id @default(uuid())
-  userId         String      @map("user_id")
-  name           String      @default("Default")
-  mode           AccountMode @default(STANDARD)
-  baseCurrency   String      @default("USD") @map("base_currency")
-  cashBalance    Decimal     @default(100000) @map("cash_balance") @db.Decimal(20, 4)
-  initialBalance Decimal     @default(100000) @map("initial_balance") @db.Decimal(20, 4)
-  marginBalance  Decimal     @default(0) @map("margin_balance") @db.Decimal(20, 4)
-  createdAt      DateTime    @default(now()) @map("created_at")
-  updatedAt      DateTime    @updatedAt @map("updated_at")
-  user           User        @relation(fields: [userId], references: [id], onDelete: Cascade)
-  positions      Position[]
-  orders         Order[]
-
-  @@map("accounts")
-}
-
-enum AccountMode {
-  STANDARD
-  RANKED
-  SIMULATION  // Separate portfolio for simulated market trading
-}
-
-// Financial instruments (stocks, futures, options)
-model Instrument {
-  id               String         @id @default(uuid())
-  symbol           String         @unique
-  name             String
-  type             InstrumentType
-  currency         String         @default("USD")
-  underlyingSymbol String?        @map("underlying_symbol")
-  expiryDate       DateTime?      @map("expiry_date")
-  strikePrice      Decimal?       @map("strike_price") @db.Decimal(20, 4)
-  optionType       OptionType?    @map("option_type")
-  lotSize          Int            @default(1) @map("lot_size")
-  exchange         String         @default("NASDAQ")
-  isActive         Boolean        @default(true) @map("is_active")
-  createdAt        DateTime       @default(now()) @map("created_at")
-  positions        Position[]
-  orders           Order[]
-
-  @@map("instruments")
-}
-
-enum InstrumentType {
-  EQUITY
-  FUTURE
-  OPTION
-}
-
-enum OptionType {
-  CALL
-  PUT
-}
-
-// Current positions/holdings
-model Position {
-  id           String     @id @default(uuid())
-  accountId    String     @map("account_id")
-  instrumentId String     @map("instrument_id")
-  quantity     Decimal    @db.Decimal(20, 4)
-  avgPrice     Decimal    @map("avg_price") @db.Decimal(20, 4)
-  avgPriceBase Decimal?   @map("avg_price_base") @db.Decimal(20, 4)
-  currency     String     @default("USD")
-  direction    Direction
-  createdAt    DateTime   @default(now()) @map("created_at")
-  updatedAt    DateTime   @updatedAt @map("updated_at")
-  account      Account    @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  instrument   Instrument @relation(fields: [instrumentId], references: [id])
-
-  @@unique([accountId, instrumentId, direction])
-  @@map("positions")
-}
-
-enum Direction {
-  LONG
-  SHORT
-}
-
-// Order requests
-model Order {
-  id           String      @id @default(uuid())
-  accountId    String      @map("account_id")
-  instrumentId String      @map("instrument_id")
-  orderType    OrderType   @map("order_type")
-  side         Side
-  quantity     Decimal     @db.Decimal(20, 4)
-  limitPrice   Decimal?    @map("limit_price") @db.Decimal(20, 4)
-  status       OrderStatus @default(PENDING)
-  filledQty    Decimal     @default(0) @map("filled_qty") @db.Decimal(20, 4)
-  avgFillPrice Decimal?    @map("avg_fill_price") @db.Decimal(20, 4)
-  currency     String      @default("USD")
-  exchangeRate Decimal     @default(1) @map("exchange_rate") @db.Decimal(20, 8)
-  createdAt    DateTime    @default(now()) @map("created_at")
-  updatedAt    DateTime    @updatedAt @map("updated_at")
-  account      Account     @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  instrument   Instrument  @relation(fields: [instrumentId], references: [id])
-  trades       Trade[]
-
-  @@map("orders")
-}
-
-enum OrderType {
-  MARKET
-  LIMIT
-}
-
-enum Side {
-  BUY
-  SELL
-}
-
-enum OrderStatus {
-  PENDING
-  FILLED
-  PARTIAL
-  CANCELLED
-  REJECTED
-}
-
-// Executed trades
-model Trade {
-  id             String   @id @default(uuid())
-  orderId        String   @map("order_id")
-  executionPrice Decimal  @map("execution_price") @db.Decimal(20, 4)
-  quantity       Decimal  @db.Decimal(20, 4)
-  currency       String   @default("USD")
-  exchangeRate   Decimal  @default(1) @map("exchange_rate") @db.Decimal(20, 8)
-  createdAt      DateTime @default(now()) @map("created_at")
-  order          Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
-
-  @@map("trades")
-}
-
-// Backtest submissions for algo trading
-model BacktestSubmission {
-  id        String   @id @default(uuid())
-  userId    String   @map("user_id")
-  symbols   String   // Comma-separated list of symbols
-  timeframe String   // e.g., "3mo", "1y"
-  interval  String   // e.g., "1d", "1h"
-  code      String   @db.Text
-  status    String   @default("pending") // pending, running, completed, failed
-  result    Json?    // Backtest results as JSON
-  createdAt DateTime @default(now()) @map("created_at")
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@map("backtest_submissions")
-}
-
-// ===== Market Simulation Persistence =====
-
-// Simulated instrument metadata (loaded from stocks.json)
-model SimInstrument {
-  id                String      @id @default(uuid())
-  symbol            String      @unique
-  name              String
-  industry          String
-  description       String?     @db.Text
-  sectorDetail      String?     @map("sector_detail")
-  character         String?
-  initialPrice      Decimal     @map("initial_price") @db.Decimal(20, 4)
-  sharesOutstanding BigInt      @map("shares_outstanding")
-  baseVolatility    Decimal     @map("base_volatility") @db.Decimal(10, 6)
-  founded           String?
-  headquarters      String?
-  createdAt         DateTime    @default(now()) @map("created_at")
-  candles           SimCandle[]
-  news              SimNews[]
-
-  @@map("sim_instruments")
-}
-
-// OHLCV candle data aggregated from the C++ engine
-model SimCandle {
-  id           String        @id @default(uuid())
-  instrumentId String        @map("instrument_id")
-  interval     SimInterval
-  timestamp    BigInt        // Simulated epoch ms
-  open         Decimal       @db.Decimal(20, 4)
-  high         Decimal       @db.Decimal(20, 4)
-  low          Decimal       @db.Decimal(20, 4)
-  close        Decimal       @db.Decimal(20, 4)
-  volume       BigInt
-  createdAt    DateTime      @default(now()) @map("created_at")
-  instrument   SimInstrument @relation(fields: [instrumentId], references: [id], onDelete: Cascade)
-
-  @@unique([instrumentId, interval, timestamp])
-  @@index([instrumentId, interval, timestamp])
-  @@map("sim_candles")
-}
-
-enum SimInterval {
-  M1
-  M5
-  M15
-  M30
-  H1
-  D1
-}
-
-// News events generated by the C++ engine
-model SimNews {
-  id           String        @id @default(uuid())
-  instrumentId String?       @map("instrument_id")
-  category     String        // global, political, industry, company
-  sentiment    String        // positive, negative, neutral
-  headline     String
-  magnitude    Decimal       @db.Decimal(10, 6)
-  industry     String?
-  companyName  String?       @map("company_name")
-  subcategory  String?
-  simTimestamp BigInt        @map("sim_timestamp") // Simulated epoch ms
-  createdAt    DateTime      @default(now()) @map("created_at")
-  instrument   SimInstrument? @relation(fields: [instrumentId], references: [id], onDelete: SetNull)
-
-  @@index([simTimestamp])
-  @@index([category])
-  @@map("sim_news")
-}
-
-// Simulation state checkpoint (for resume after restart)
-model SimState {
-  id          String   @id @default(uuid())
-  key         String   @unique
-  value       Json
-  updatedAt   DateTime @updatedAt @map("updated_at")
-
-  @@map("sim_state")
-}
-

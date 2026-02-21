@@ -24,9 +24,19 @@ namespace market {
 
         if (orderCopy.side == OrderSide::BUY) {
             bids_.push(orderCopy);
+            orderIdToBidPrice_[orderCopy.id] = orderCopy.price;
+            auto it = bestBidByPrice_.find(orderCopy.price);
+            if (it == bestBidByPrice_.end()) {
+                bestBidByPrice_[orderCopy.price] = orderCopy.id;
+            }
         }
         else {
             asks_.push(orderCopy);
+            orderIdToAskPrice_[orderCopy.id] = orderCopy.price;
+            auto it = bestAskByPrice_.find(orderCopy.price);
+            if (it == bestAskByPrice_.end()) {
+                bestAskByPrice_[orderCopy.price] = orderCopy.id;
+            }
         }
     }
 
@@ -36,6 +46,27 @@ namespace market {
         auto it = activeOrders_.find(orderId);
         if (it != activeOrders_.end() && it->second) {
             it->second = false;
+
+            auto bidPriceIt = orderIdToBidPrice_.find(orderId);
+            if (bidPriceIt != orderIdToBidPrice_.end()) {
+                Price price = bidPriceIt->second;
+                orderIdToBidPrice_.erase(bidPriceIt);
+                auto bestIt = bestBidByPrice_.find(price);
+                if (bestIt != bestBidByPrice_.end() && bestIt->second == orderId) {
+                    bestBidByPrice_.erase(bestIt);
+                }
+            }
+
+            auto askPriceIt = orderIdToAskPrice_.find(orderId);
+            if (askPriceIt != orderIdToAskPrice_.end()) {
+                Price price = askPriceIt->second;
+                orderIdToAskPrice_.erase(askPriceIt);
+                auto bestIt = bestAskByPrice_.find(price);
+                if (bestIt != bestAskByPrice_.end() && bestIt->second == orderId) {
+                    bestAskByPrice_.erase(bestIt);
+                }
+            }
+
             return true;
         }
         return false;
@@ -47,21 +78,28 @@ namespace market {
 
         Timestamp currentTime = currentTs();
 
-        // Remove cancelled and expired orders from top
-        auto isInvalid = [&](const Order& o) {
-            if (!activeOrders_[o.id]) return true;
-            if (currentTime > o.timestamp && (currentTime - o.timestamp) > maxOrderAgeMs_) {
-                activeOrders_[o.id] = false;
-                return true;
-            }
-            return false;
-            };
+        auto isExpired = [&](const Order& o) {
+            return (currentTime - o.timestamp) > maxOrderAgeMs_;
+        };
 
-        while (!bids_.empty() && isInvalid(bids_.top())) {
-            bids_.pop();
+        // Remove cancelled and expired orders from top
+        while (!bids_.empty()) {
+            const Order& top = bids_.top();
+            if (!activeOrders_[top.id] || isExpired(top)) {
+                if (activeOrders_[top.id]) activeOrders_[top.id] = false;
+                bids_.pop();
+            } else {
+                break;
+            }
         }
-        while (!asks_.empty() && isInvalid(asks_.top())) {
-            asks_.pop();
+        while (!asks_.empty()) {
+            const Order& top = asks_.top();
+            if (!activeOrders_[top.id] || isExpired(top)) {
+                if (activeOrders_[top.id]) activeOrders_[top.id] = false;
+                asks_.pop();
+            } else {
+                break;
+            }
         }
 
         // Match while bid >= ask
@@ -70,12 +108,12 @@ namespace market {
             Order ask = asks_.top();
 
             // Skip cancelled or expired orders
-            if (!activeOrders_[bid.id] || (currentTime > bid.timestamp && (currentTime - bid.timestamp) > maxOrderAgeMs_)) {
+            if (!activeOrders_[bid.id] || isExpired(bid)) {
                 activeOrders_[bid.id] = false;
                 bids_.pop();
                 continue;
             }
-            if (!activeOrders_[ask.id] || (currentTime > ask.timestamp && (currentTime - ask.timestamp) > maxOrderAgeMs_)) {
+            if (!activeOrders_[ask.id] || isExpired(ask)) {
                 activeOrders_[ask.id] = false;
                 asks_.pop();
                 continue;
@@ -115,17 +153,25 @@ namespace market {
             trade.symbol = symbol_;
             trade.price = execPrice;
             trade.quantity = execQty;
-            trade.timestamp = currentTs();
+            trade.timestamp = currentTime;
             trades.push_back(trade);
 
             // Update order quantities
             bids_.pop();
             asks_.pop();
 
+            // Clean up price indices for filled orders
+            bestBidByPrice_.erase(bid.price);
+            bestAskByPrice_.erase(ask.price);
+            orderIdToBidPrice_.erase(bid.id);
+            orderIdToAskPrice_.erase(ask.id);
+
             if (bid.quantity > execQty) {
                 Order remainingBid = bid;
                 remainingBid.quantity -= execQty;
                 bids_.push(remainingBid);
+                orderIdToBidPrice_[remainingBid.id] = remainingBid.price;
+                bestBidByPrice_[remainingBid.price] = remainingBid.id;
             }
             else {
                 activeOrders_[bid.id] = false;
@@ -135,6 +181,8 @@ namespace market {
                 Order remainingAsk = ask;
                 remainingAsk.quantity -= execQty;
                 asks_.push(remainingAsk);
+                orderIdToAskPrice_[remainingAsk.id] = remainingAsk.price;
+                bestAskByPrice_[remainingAsk.price] = remainingAsk.id;
             }
             else {
                 activeOrders_[ask.id] = false;
@@ -144,13 +192,28 @@ namespace market {
         return trades;
     }
 
-    // ----- Lock-free helpers (must be called with mutex_ already held) -----
+    // ----- O(1) best price helpers using cached indices -----
 
     Price OrderBook::getBestBidUnlocked() const {
+        // Try cached best bid first
+        while (!bestBidByPrice_.empty()) {
+            auto it = bestBidByPrice_.begin(); // highest price (std::greater)
+            OrderId id = it->second;
+            if (activeOrders_.count(id) && activeOrders_.at(id)) {
+                return it->first;
+            }
+            // Stale entry - remove and continue
+            const_cast<OrderBook*>(this)->bestBidByPrice_.erase(it);
+        }
+
+        // Fallback: scan queue for valid order
         auto bidsCopy = bids_;
         while (!bidsCopy.empty()) {
-            if (activeOrders_.count(bidsCopy.top().id) && activeOrders_.at(bidsCopy.top().id)) {
-                return bidsCopy.top().price;
+            const Order& o = bidsCopy.top();
+            if (activeOrders_.count(o.id) && activeOrders_.at(o.id)) {
+                // Rebuild index
+                const_cast<OrderBook*>(this)->bestBidByPrice_[o.price] = o.id;
+                return o.price;
             }
             bidsCopy.pop();
         }
@@ -158,10 +221,25 @@ namespace market {
     }
 
     Price OrderBook::getBestAskUnlocked() const {
+        // Try cached best ask first
+        while (!bestAskByPrice_.empty()) {
+            auto it = bestAskByPrice_.begin(); // lowest price
+            OrderId id = it->second;
+            if (activeOrders_.count(id) && activeOrders_.at(id)) {
+                return it->first;
+            }
+            // Stale entry - remove and continue
+            const_cast<OrderBook*>(this)->bestAskByPrice_.erase(it);
+        }
+
+        // Fallback: scan queue for valid order
         auto asksCopy = asks_;
         while (!asksCopy.empty()) {
-            if (activeOrders_.count(asksCopy.top().id) && activeOrders_.at(asksCopy.top().id)) {
-                return asksCopy.top().price;
+            const Order& o = asksCopy.top();
+            if (activeOrders_.count(o.id) && activeOrders_.at(o.id)) {
+                // Rebuild index
+                const_cast<OrderBook*>(this)->bestAskByPrice_[o.price] = o.id;
+                return o.price;
             }
             asksCopy.pop();
         }
@@ -268,6 +346,10 @@ namespace market {
         while (!bids_.empty()) bids_.pop();
         while (!asks_.empty()) asks_.pop();
         activeOrders_.clear();
+        bestBidByPrice_.clear();
+        bestAskByPrice_.clear();
+        orderIdToBidPrice_.clear();
+        orderIdToAskPrice_.clear();
     }
 
 } // namespace market

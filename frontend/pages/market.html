@@ -1,0 +1,142 @@
+<div x-show="currentPage === 'market'" class="page market-page">
+  <header class="page-header">
+    <h1>Market Status</h1>
+    <p>Current commodity prices from the live simulation</p>
+  </header>
+
+  <div x-show="!marketStatus?.commodities?.length" class="market-offline">
+    <p>
+      Market simulator not available. Start the C++ market simulator on port
+      8080.
+    </p>
+  </div>
+
+  <div x-show="marketStatus?.commodities?.length" class="market-grid">
+    <div class="prices-section">
+      <h3>Current Prices</h3>
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Symbol</th>
+            <th>Name</th>
+            <th>Price</th>
+            <th>Change</th>
+            <th>Volume</th>
+          </tr>
+        </thead>
+        <tbody>
+          <template
+            x-for="c in marketStatus?.commodities || []"
+            :key="c.symbol"
+          >
+            <tr @click="selectCommodity(c.symbol)" class="clickable">
+              <td x-text="c.symbol"></td>
+              <td x-text="c.name"></td>
+              <td x-text="formatCurrency(c.price, 'USD')"></td>
+              <td
+                :class="{ positive: c.change >= 0, negative: c.change < 0 }"
+                x-text="formatPercent(c.change)"
+              ></td>
+              <td x-text="formatNumber(c.volume)"></td>
+            </tr>
+          </template>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="chart-section">
+      <h3>Price Chart: <span x-text="selectedCommodity"></span></h3>
+      <div id="tradingview-chart" class="tv-chart-container"></div>
+      <div class="chart-controls">
+        <button
+          @click="fetchCandles('1m')"
+          class="btn btn-small"
+          :class="{ 'btn-primary': candleInterval === '1m', 'btn-secondary': candleInterval !== '1m' }"
+        >
+          1m
+        </button>
+        <button
+          @click="fetchCandles('5m')"
+          class="btn btn-small"
+          :class="{ 'btn-primary': candleInterval === '5m', 'btn-secondary': candleInterval !== '5m' }"
+        >
+          5m
+        </button>
+        <button
+          @click="fetchCandles('15m')"
+          class="btn btn-small"
+          :class="{ 'btn-primary': candleInterval === '15m', 'btn-secondary': candleInterval !== '15m' }"
+        >
+          15m
+        </button>
+        <button
+          @click="fetchCandles('30m')"
+          class="btn btn-small"
+          :class="{ 'btn-primary': candleInterval === '30m', 'btn-secondary': candleInterval !== '30m' }"
+        >
+          30m
+        </button>
+        <button
+          @click="fetchCandles('1h')"
+          class="btn btn-small"
+          :class="{ 'btn-primary': candleInterval === '1h', 'btn-secondary': candleInterval !== '1h' }"
+        >
+          1h
+        </button>
+        <button
+          @click="fetchCandles('1d')"
+          class="btn btn-small"
+          :class="{ 'btn-primary': candleInterval === '1d', 'btn-secondary': candleInterval !== '1d' }"
+        >
+          1d
+        </button>
+      </div>
+    </div>
+
+    <div class="orderbook-section">
+      <h3>Orderbook: <span x-text="selectedCommodity"></span></h3>
+
+      <div x-show="orderbook" class="orderbook">
+        <div class="book-side asks">
+          <h4>Asks</h4>
+          <template
+            x-for="ask in orderbook?.asks?.slice().reverse()"
+            :key="ask.price"
+          >
+            <div class="book-row ask">
+              <span
+                class="price"
+                x-text="formatCurrency(ask.price, 'USD')"
+              ></span>
+              <span class="qty" x-text="ask.quantity"></span>
+            </div>
+          </template>
+        </div>
+
+        <div class="book-spread">
+          <span
+            >Spread:
+            <span x-text="formatCurrency(orderbook?.spread, 'USD')"></span
+          ></span>
+          <span
+            >Mid:
+            <span x-text="formatCurrency(orderbook?.midPrice, 'USD')"></span
+          ></span>
+        </div>
+
+        <div class="book-side bids">
+          <h4>Bids</h4>
+          <template x-for="bid in orderbook?.bids" :key="bid.price">
+            <div class="book-row bid">
+              <span
+                class="price"
+                x-text="formatCurrency(bid.price, 'USD')"
+              ></span>
+              <span class="qty" x-text="bid.quantity"></span>
+            </div>
+          </template>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>

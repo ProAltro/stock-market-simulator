@@ -1,31 +1,58 @@
-export const API_URL = "http://localhost:3000/api";
+export const API_URL = window.location.origin + "/api";
 
 export async function fetchWithAuth(url, options = {}) {
-    const token = localStorage.getItem("decrypt_token");
-    const headers = {
-        "Content-Type": "application/json",
-        ...options.headers,
-    };
+  const token = localStorage.getItem("decrypt_token");
+  const headers = {
+    "Content-Type": "application/json",
+    ...options.headers,
+  };
 
-    if (token) {
-        headers["Authorization"] = `Bearer ${token}`;
-    }
+  if (token) {
+    headers["Authorization"] = `Bearer ${token}`;
+  }
 
-    const res = await fetch(url, {
-        ...options,
-        headers,
-    });
+  const res = await fetch(url, {
+    ...options,
+    headers,
+  });
 
-    return res;
+  return res;
 }
 
 export async function post(url, body) {
-    return fetchWithAuth(url, {
-        method: "POST",
-        body: JSON.stringify(body),
-    });
+  const res = await fetchWithAuth(url, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({ error: "Request failed" }));
+    throw new Error(error.error || "Request failed");
+  }
+
+  return res.json();
 }
 
 export async function get(url) {
-    return fetchWithAuth(url);
+  const res = await fetchWithAuth(url);
+
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({ error: "Request failed" }));
+    throw new Error(error.error || "Request failed");
+  }
+
+  return res.json();
+}
+
+export async function del(url) {
+  const res = await fetchWithAuth(url, {
+    method: "DELETE",
+  });
+
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({ error: "Request failed" }));
+    throw new Error(error.error || "Request failed");
+  }
+
+  return res.json();
 }

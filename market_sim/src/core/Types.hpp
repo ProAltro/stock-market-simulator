@@ -9,48 +9,42 @@
 
 namespace market {
 
-    // Type aliases
     using Price = double;
     using Volume = int64_t;
     using Timestamp = uint64_t;
     using AgentId = uint64_t;
     using OrderId = uint64_t;
 
-    // Order side
     enum class OrderSide {
         BUY,
         SELL
     };
 
-    // Order type
     enum class OrderType {
         MARKET,
         LIMIT
     };
 
-    // News category
     enum class NewsCategory {
-        GLOBAL,
-        POLITICAL,
-        INDUSTRY,
-        COMPANY
+        GLOBAL,      // Economic conditions affecting all commodities
+        POLITICAL,   // Trade policy, tariffs, regulations
+        SUPPLY,      // Supply-side events (per commodity)
+        DEMAND       // Demand-side events (per commodity)
     };
 
-    // News sentiment
     enum class NewsSentiment {
         POSITIVE,
         NEGATIVE,
         NEUTRAL
     };
 
-    // Order structure
     struct Order {
         OrderId id;
         AgentId agentId;
         std::string symbol;
         OrderSide side;
         OrderType type;
-        Price price;          // For limit orders
+        Price price;
         Volume quantity;
         Timestamp timestamp;
 
@@ -59,21 +53,19 @@ namespace market {
         }
     };
 
-    // Trade (executed order)
     struct Trade {
         OrderId buyOrderId;
         OrderId sellOrderId;
         AgentId buyerId;
         AgentId sellerId;
-        std::string buyerType;   // e.g. "FundamentalTrader"
-        std::string sellerType;  // e.g. "MarketMaker"
+        std::string buyerType;
+        std::string sellerType;
         std::string symbol;
         Price price;
         Volume quantity;
         Timestamp timestamp;
     };
 
-    // Per-agent-type order/trade statistics
     struct AgentTypeStats {
         uint64_t ordersPlaced = 0;
         uint64_t buyOrders = 0;
@@ -84,22 +76,19 @@ namespace market {
         double cashReceived = 0;
     };
 
-    // News event
     struct NewsEvent {
         NewsCategory category;
         NewsSentiment sentiment;
-        std::string industry;       // For industry news
-        std::string symbol;         // For company news
-        std::string companyName;    // Human-readable company name
-        std::string subcategory;    // e.g. "earnings", "regulation", "trade_policy"
-        double magnitude;           // Impact size [-1, 1]
+        std::string symbol;         // Target commodity (OIL, STEEL, etc.)
+        std::string commodityName;  // Human-readable name
+        std::string subcategory;    // e.g., "production", "logistics", "consumption"
+        double magnitude;           // Impact size [0, 1]
         Timestamp timestamp;
         std::string headline;
     };
 
-    // OHLCV Candle
     struct Candle {
-        Timestamp time;       // Start of candle period (epoch ms)
+        Timestamp time;
         Price open;
         Price high;
         Price low;
@@ -109,21 +98,56 @@ namespace market {
         bool isValid() const { return time > 0 && open > 0; }
     };
 
-    // Market state snapshot for agents
+    struct SupplyDemand {
+        double production = 0.0;    // Current production level
+        double imports = 0.0;       // Import volume
+        double exports = 0.0;       // Export volume
+        double consumption = 0.0;   // Current consumption level
+        double inventory = 0.0;     // Inventory/stockpile level
+
+        double getTotalSupply() const {
+            return production + imports - exports;
+        }
+
+        double getTotalDemand() const {
+            return consumption;
+        }
+
+        // Flow-based imbalance: positive = excess demand, negative = excess supply
+        // Symmetric around zero, does NOT include inventory (which would create
+        // a permanent bias). Inventory info is available separately for agents
+        // that want to use it.
+        double getImbalance() const {
+            double avg = (production + consumption) / 2.0;
+            if (avg <= 0) return 0.0;
+            return (consumption - production) / avg;
+        }
+
+        // Inventory pressure: >1 means excess inventory, <1 means shortage
+        double getInventoryRatio(double baseInventory) const {
+            if (baseInventory <= 0) return 1.0;
+            return inventory / baseInventory;
+        }
+    };
+
+    struct CrossEffect {
+        std::string targetSymbol;
+        double coefficient;  // How much target price moves per 1% source price change
+    };
+
     struct MarketState {
         std::map<std::string, Price> prices;
-        std::map<std::string, Price> fundamentals;
+        std::map<std::string, SupplyDemand> supplyDemand;
         std::map<std::string, std::vector<Price>> priceHistory;
         std::map<std::string, Volume> volumes;
-        std::map<std::string, std::string> symbolToIndustry;
+        std::map<std::string, std::string> symbolToCategory;
+        std::map<std::string, std::vector<CrossEffect>> crossEffects;
         std::vector<NewsEvent> recentNews;
         double globalSentiment;
-        double interestRate;
-        double tickScale = 1.0;   // ratio of ref tpd to current tpd (1.0 in populate mode)
+        double tickScale = 1.0;
         Timestamp currentTime;
     };
 
-    // Agent parameters (sampled from distributions)
     struct AgentParams {
         double riskAversion;
         double reactionSpeed;
@@ -132,21 +156,18 @@ namespace market {
         int timeHorizon;
     };
 
-    // Position in portfolio
     struct Position {
         std::string symbol;
         Volume quantity;
         Price avgCost;
     };
 
-    // Order book level
     struct BookLevel {
         Price price;
         Volume totalQuantity;
         int orderCount;
     };
 
-    // Order book snapshot
     struct OrderBookSnapshot {
         std::string symbol;
         std::vector<BookLevel> bids;
@@ -157,7 +178,6 @@ namespace market {
         Price midPrice;
     };
 
-    // Simulation metrics
     struct SimulationMetrics {
         uint64_t totalTicks;
         uint64_t totalTrades;
@@ -165,10 +185,9 @@ namespace market {
         double avgSpread;
         double avgVolatility;
         std::map<std::string, double> returns;
-        std::map<std::string, AgentTypeStats> agentTypeStats;  // keyed by agent type name
+        std::map<std::string, AgentTypeStats> agentTypeStats;
     };
 
-    // Utility to get current timestamp
     inline Timestamp now() {
         return std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::system_clock::now().time_since_epoch()

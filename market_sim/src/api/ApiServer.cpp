@@ -80,9 +80,9 @@ namespace market {
             res.set_content(jsonResponse(sim_.getStateJson()), "application/json");
             });
 
-        // GET /assets - All asset data
-        server_.Get("/assets", [this](const httplib::Request&, httplib::Response& res) {
-            res.set_content(jsonResponse(sim_.getAssetsJson()), "application/json");
+        // GET /commodities - All commodity data
+        server_.Get("/commodities", [this](const httplib::Request&, httplib::Response& res) {
+            res.set_content(jsonResponse(sim_.getCommoditiesJson()), "application/json");
             });
 
         // GET /agents - Agent summary
@@ -133,6 +133,7 @@ namespace market {
             try {
                 auto body = nlohmann::json::parse(req.body);
                 std::string action = body.value("action", "");
+                Logger::info("[API] POST /control action={}", action);
 
                 if (action == "start") {
                     sim_.start();
@@ -178,7 +179,7 @@ namespace market {
                 std::string sentimentStr = body.value("sentiment", "neutral");
                 double magnitude = body.value("magnitude", 0.05);
                 std::string headline = body.value("headline", "");
-                std::string target = body.value("target", "");  // industry or symbol
+                std::string target = body.value("target", "");
 
                 NewsSentiment sentiment = NewsSentiment::NEUTRAL;
                 if (sentimentStr == "positive") sentiment = NewsSentiment::POSITIVE;
@@ -186,14 +187,37 @@ namespace market {
 
                 auto& newsGen = sim_.getEngine().getNewsGenerator();
 
+                bool valid = false;
                 if (category == "global") {
                     newsGen.injectGlobalNews(sentiment, magnitude, headline);
+                    valid = true;
                 }
-                else if (category == "industry") {
-                    newsGen.injectIndustryNews(target, sentiment, magnitude, headline);
+                else if (category == "political") {
+                    newsGen.injectGlobalNews(sentiment, magnitude, headline);
+                    valid = true;
                 }
-                else if (category == "company") {
-                    newsGen.injectCompanyNews(target, sentiment, magnitude, headline);
+                else if (category == "supply") {
+                    if (target.empty()) {
+                        res.status = 400;
+                        res.set_content(errorResponse("Supply news requires 'target' commodity symbol"), "application/json");
+                        return;
+                    }
+                    newsGen.injectSupplyNews(target, sentiment, magnitude, headline);
+                    valid = true;
+                }
+                else if (category == "demand") {
+                    if (target.empty()) {
+                        res.status = 400;
+                        res.set_content(errorResponse("Demand news requires 'target' commodity symbol"), "application/json");
+                        return;
+                    }
+                    newsGen.injectDemandNews(target, sentiment, magnitude, headline);
+                    valid = true;
+                }
+                else {
+                    res.status = 400;
+                    res.set_content(errorResponse("Invalid category. Must be: global, political, supply, demand"), "application/json");
+                    return;
                 }
 
                 Logger::info("Injected {} news: {} (mag: {})", category, headline, magnitude);
@@ -221,8 +245,10 @@ namespace market {
         // POST /config - Merge-patch update to RuntimeConfig (hot params only)
         server_.Post("/config", [this](const httplib::Request& req, httplib::Response& res) {
             try {
+                Logger::info("[API] POST /config - updating runtime config");
                 std::unique_lock<std::shared_mutex> lock(sim_.getEngineMutex());
                 auto body = nlohmann::json::parse(req.body);
+                Logger::info("[API] POST /config - lock acquired, applying {} keys", body.size());
 
                 // Merge-patch into the live config
                 sim_.getRuntimeConfig().fromJson(body);
@@ -240,18 +266,12 @@ namespace market {
                     sim_.getEngine().getNewsGenerator().setLambda(cfg.news.lambda);
                 }
 
-                // Global sentiment override
-                if (body.contains("macro") && body["macro"].contains("sentimentMean")) {
-                    sim_.getEngine().getMacroEnvironment().setGlobalSentiment(cfg.macro.sentimentMean);
-                }
-
-                // Asset params (push to all assets)
-                if (body.contains("asset")) {
-                    for (auto& [sym, asset] : sim_.getEngine().getMutableAssets()) {
-                        asset->setMaxDailyMove(cfg.asset.circuitBreakerLimit);
-                        asset->setImpactDampening(cfg.asset.impactDampening);
-                        asset->setFundamentalShockClamp(cfg.asset.fundamentalShockClamp);
-                        asset->setPriceFloor(cfg.asset.priceFloor);
+                // Commodity params (push to all commodities)
+                if (body.contains("commodity")) {
+                    for (auto& [sym, commodity] : sim_.getEngine().getMutableCommodities()) {
+                        commodity->setMaxDailyMove(cfg.commodity.circuitBreakerLimit);
+                        commodity->setImpactDampening(cfg.commodity.impactDampening);
+                        commodity->setPriceFloor(cfg.commodity.priceFloor);
                     }
                 }
 
@@ -276,9 +296,8 @@ namespace market {
         // POST /config/reset - Reset to defaults + reinitialize
         server_.Post("/config/reset", [this](const httplib::Request&, httplib::Response& res) {
             try {
-                std::unique_lock<std::shared_mutex> lock(sim_.getEngineMutex());
                 sim_.getRuntimeConfig() = RuntimeConfig();
-                sim_.reinitialize();
+                sim_.reinitialize();  // reinitialize() acquires its own lock
                 res.set_content(jsonResponse({
                     {"status", "ok"},
                     {"message", "Config reset to defaults and simulation reinitialized."}
@@ -290,11 +309,12 @@ namespace market {
             }
             });
 
-        // POST /reinitialize - Rebuild agents/assets with current config (cold params)
+        // POST /reinitialize - Rebuild agents/commodities with current config (cold params)
         server_.Post("/reinitialize", [this](const httplib::Request&, httplib::Response& res) {
             try {
-                std::unique_lock<std::shared_mutex> lock(sim_.getEngineMutex());
-                sim_.reinitialize();
+                Logger::info("[API] POST /reinitialize - starting");
+                sim_.reinitialize();  // reinitialize() acquires its own lock
+                Logger::info("[API] POST /reinitialize - done");
                 res.set_content(jsonResponse({
                     {"status", "ok"},
                     {"message", "Simulation reinitialized with current config."}
@@ -325,9 +345,9 @@ namespace market {
                     return;
                 }
 
-                // Get current asset price
-                auto* asset = sim_.getEngine().getAsset(symbol);
-                if (!asset) {
+                // Get current commodity price
+                auto* commodity = sim_.getEngine().getCommodity(symbol);
+                if (!commodity) {
                     res.status = 404;
                     res.set_content(errorResponse("Symbol not found: " + symbol), "application/json");
                     return;
@@ -342,7 +362,7 @@ namespace market {
                 }
 
                 // Determine execution price
-                double execPrice = asset->getPrice();
+                double execPrice = commodity->getPrice();
                 OrderSide side = (sideStr == "SELL") ? OrderSide::SELL : OrderSide::BUY;
 
                 // For market orders, use best available price
@@ -357,25 +377,6 @@ namespace market {
                 // For limit orders, check price validity
                 OrderType orderType = (typeStr == "LIMIT") ? OrderType::LIMIT : OrderType::MARKET;
                 if (orderType == OrderType::LIMIT && price > 0) {
-                    // Limit order: only execute if price is favorable
-                    if (side == OrderSide::BUY && price < execPrice) {
-                        res.status = 200;
-                        res.set_content(jsonResponse({
-                            {"status", "pending"},
-                            {"message", "Limit order placed but not filled (price too low)"},
-                            {"orderId", 0}
-                            }), "application/json");
-                        return;
-                    }
-                    if (side == OrderSide::SELL && price > execPrice) {
-                        res.status = 200;
-                        res.set_content(jsonResponse({
-                            {"status", "pending"},
-                            {"message", "Limit order placed but not filled (price too high)"},
-                            {"orderId", 0}
-                            }), "application/json");
-                        return;
-                    }
                     execPrice = price;
                 }
 
@@ -407,9 +408,9 @@ namespace market {
                     avgFillPrice /= filledQty;
                 }
 
-                // Update asset price
+                // Update commodity price
                 if (!trades.empty()) {
-                    asset->setPrice(trades.back().price);
+                    commodity->setPrice(trades.back().price);
                 }
 
                 nlohmann::json response;
@@ -460,23 +461,15 @@ namespace market {
                             data["simTimestamp"] = sim_.getEngine().getSimClock().currentTimestamp();
 
                             // Include prices
-                            data["assets"] = nlohmann::json::array();
-                            for (const auto& [symbol, asset] : sim_.getEngine().getAssets()) {
-                                data["assets"].push_back({
+                            data["commodities"] = nlohmann::json::array();
+                            for (const auto& [symbol, commodity] : sim_.getEngine().getCommodities()) {
+                                data["commodities"].push_back({
                                     {"symbol", symbol},
-                                    {"name", asset->getName()},
-                                    {"price", asset->getPrice()},
-                                    {"fundamental", asset->getFundamentalValue()},
-                                    {"change", asset->getReturn(1)}
+                                    {"name", commodity->getName()},
+                                    {"price", commodity->getPrice()},
+                                    {"change", commodity->getReturn(1)}
                                     });
                             }
-
-                            // Include macro state
-                            const auto& macro = sim_.getEngine().getMacroEnvironment();
-                            data["macro"] = {
-                                {"sentiment", macro.getGlobalSentiment()},
-                                {"volatility", macro.getVolatilityIndex()}
-                            };
                         } // release shared lock before writing to sink
 
                         std::string event = "data: " + data.dump() + "\n\n";
@@ -494,16 +487,15 @@ namespace market {
                                 newsData["events"] = nlohmann::json::array();
                                 for (const auto& n : news) {
                                     newsData["events"].push_back({
-                                        {"headline", n.headline},
-                                        {"category", n.category == NewsCategory::GLOBAL ? "global" :
-                                                     n.category == NewsCategory::POLITICAL ? "political" :
-                                                     n.category == NewsCategory::INDUSTRY ? "industry" : "company"},
-                                        {"sentiment", n.sentiment == NewsSentiment::POSITIVE ? "positive" :
-                                                      n.sentiment == NewsSentiment::NEGATIVE ? "negative" : "neutral"},
-                                        {"magnitude", n.magnitude},
-                                        {"symbol", n.symbol},
-                                        {"companyName", n.companyName},
-                                        {"industry", n.industry}
+                                            {"headline", n.headline},
+                                            {"category", n.category == NewsCategory::GLOBAL ? "global" :
+                                                         n.category == NewsCategory::POLITICAL ? "political" :
+                                                         n.category == NewsCategory::SUPPLY ? "supply" : "demand"},
+                                            {"sentiment", n.sentiment == NewsSentiment::POSITIVE ? "positive" :
+                                                          n.sentiment == NewsSentiment::NEGATIVE ? "negative" : "neutral"},
+                                            {"magnitude", n.magnitude},
+                                            {"symbol", n.symbol},
+                                            {"subcategory", n.subcategory}
                                         });
                                 }
                                 std::string newsEvent = "data: " + newsData.dump() + "\n\n";
@@ -574,35 +566,24 @@ namespace market {
             }
             diag["agentTypeStats"] = statsJson;
 
-            // 3. Asset health
-            nlohmann::json assetsJson;
-            for (const auto& [sym, asset] : sim_.getEngine().getAssets()) {
+            // 3. Commodity health
+            nlohmann::json commoditiesJson;
+            for (const auto& [sym, commodity] : sim_.getEngine().getCommodities()) {
                 auto* book = sim_.getEngine().getOrderBook(sym);
                 auto snap = book ? book->getSnapshot(1) : OrderBookSnapshot{};
 
-                assetsJson[sym] = {
-                    {"price", asset->getPrice()},
-                    {"fundamental", asset->getFundamentalValue()},
-                    {"priceFundRatio", asset->getFundamentalValue() > 0.0001 ?
-                        asset->getPrice() / asset->getFundamentalValue() : 0.0},
-                    {"dailyVolume", asset->getDailyVolume()},
+                commoditiesJson[sym] = {
+                    {"price", commodity->getPrice()},
+                    {"dailyVolume", commodity->getDailyVolume()},
                     {"bestBid", snap.bestBid},
                     {"bestAsk", snap.bestAsk},
                     {"spread", snap.spread},
                     {"spreadPct", snap.midPrice > 0 ? snap.spread / snap.midPrice * 100.0 : 0.0}
                 };
             }
-            diag["assets"] = assetsJson;
+            diag["commodities"] = commoditiesJson;
 
-            // 4. Macro environment
-            const auto& macro = sim_.getEngine().getMacroEnvironment();
-            diag["macro"] = {
-                {"globalSentiment", macro.getGlobalSentiment()},
-                {"volatilityIndex", macro.getVolatilityIndex()},
-                {"interestRate", macro.getInterestRate()}
-            };
-
-            // 5. Simulation clock
+            // 4. Simulation clock
             const auto& clock = sim_.getEngine().getSimClock();
             diag["clock"] = {
                 {"currentDate", clock.currentDateString()},
@@ -611,7 +592,7 @@ namespace market {
                 {"ticksPerDay", clock.getTicksPerDay()}
             };
 
-            // 6. Top-level metrics
+            // 5. Top-level metrics
             auto metrics = sim_.getEngine().getMetrics();
             diag["metrics"] = {
                 {"totalTicks", metrics.totalTicks},
@@ -621,7 +602,7 @@ namespace market {
                 {"tradeLogSize", sim_.getEngine().getRecentTrades().size()}
             };
 
-            // 7. Recent trades sample (last 10)
+            // 6. Recent trades sample (last 10)
             nlohmann::json recentTrades = nlohmann::json::array();
             const auto& trades = sim_.getEngine().getRecentTrades();
             int count = 0;
@@ -642,11 +623,6 @@ namespace market {
         // Health check
         server_.Get("/health", [](const httplib::Request&, httplib::Response& res) {
             res.set_content(jsonResponse({ {"status", "healthy"} }), "application/json");
-            });
-
-        // GET /stocks - Stock metadata from stocks.json (for frontend)
-        server_.Get("/stocks", [this](const httplib::Request&, httplib::Response& res) {
-            res.set_content(jsonResponse(sim_.getStockInfoJson()), "application/json");
             });
 
         // GET /candles/bulk - Get candles for all symbols at once
@@ -715,23 +691,29 @@ namespace market {
                 auto body = nlohmann::json::parse(req.body);
                 int days = body.value("days", 180);
                 std::string startDate = body.value("startDate", "2025-08-07");
+                Logger::info("[API] POST /populate days={} startDate={}", days, startDate);
 
                 if (sim_.isRunning()) {
+                    Logger::warn("[API] POST /populate rejected: sim is running");
                     res.status = 400;
                     res.set_content(errorResponse("Stop simulation before populating"), "application/json");
                     return;
                 }
 
                 if (sim_.isPopulating()) {
+                    Logger::warn("[API] POST /populate rejected: already populating");
                     res.status = 400;
                     res.set_content(errorResponse("Population already in progress"), "application/json");
                     return;
                 }
 
+                Logger::info("[API] POST /populate - starting background thread");
                 // Start populate in background thread
                 std::thread([this, days, startDate]() {
+                    Logger::info("[API] Populate thread started");
                     sim_.populate(days, startDate);
-                }).detach();
+                    Logger::info("[API] Populate thread finished");
+                    }).detach();
 
                 // Return immediately - client polls /state for progress
                 res.set_content(jsonResponse({
@@ -778,8 +760,8 @@ namespace market {
                 switch (n.category) {
                 case NewsCategory::GLOBAL: catStr = "global"; break;
                 case NewsCategory::POLITICAL: catStr = "political"; break;
-                case NewsCategory::INDUSTRY: catStr = "industry"; break;
-                case NewsCategory::COMPANY: catStr = "company"; break;
+                case NewsCategory::SUPPLY: catStr = "supply"; break;
+                case NewsCategory::DEMAND: catStr = "demand"; break;
                 }
                 j.push_back({
                     {"headline", n.headline},
@@ -788,14 +770,83 @@ namespace market {
                                   n.sentiment == NewsSentiment::NEGATIVE ? "negative" : "neutral"},
                     {"magnitude", n.magnitude},
                     {"symbol", n.symbol},
-                    {"companyName", n.companyName},
-                    {"industry", n.industry},
                     {"subcategory", n.subcategory},
                     {"timestamp", n.timestamp}
                     });
             }
 
             res.set_content(jsonResponse(j), "application/json");
+            });
+
+        // POST /export - Export tick data to files
+        server_.Post("/export", [this](const httplib::Request& req, httplib::Response& res) {
+            try {
+                auto body = nlohmann::json::parse(req.body.empty() ? "{}" : req.body);
+
+                std::string format = body.value("format", "json");
+                std::string dataDir = body.value("dataDir", "/data");
+                size_t maxTicks = body.value("maxTicks", 0);
+
+                if (sim_.isPopulating()) {
+                    res.status = 400;
+                    res.set_content(errorResponse("Cannot export while populating"), "application/json");
+                    return;
+                }
+
+                bool success = false;
+                std::string fullPath;
+
+                if (format == "csv") {
+                    fullPath = dataDir + "/csv";
+                    success = sim_.getTickBuffer().exportToCsv(fullPath, maxTicks);
+                }
+                else {
+                    fullPath = dataDir + "/full_1m.json";
+                    success = sim_.getTickBuffer().exportToJson(fullPath, maxTicks);
+
+                    if (success && maxTicks == 0) {
+                        std::string devPath = dataDir + "/dev_100k.json";
+                        success = sim_.getTickBuffer().exportToJson(devPath, 100000);
+                    }
+                }
+
+                if (success) {
+                    res.set_content(jsonResponse({
+                        {"status", "ok"},
+                        {"path", fullPath},
+                        {"format", format},
+                        {"ticksExported", sim_.getTickBuffer().getTickCount()}
+                        }), "application/json");
+                }
+                else {
+                    res.status = 500;
+                    res.set_content(errorResponse("Export failed"), "application/json");
+                }
+            }
+            catch (const std::exception& e) {
+                res.status = 400;
+                res.set_content(errorResponse(e.what()), "application/json");
+            }
+            });
+
+        // GET /export/status - Check export status
+        server_.Get("/export/status", [this](const httplib::Request&, httplib::Response& res) {
+            auto& buffer = sim_.getTickBuffer();
+
+            res.set_content(jsonResponse({
+                {"isExporting", buffer.isExporting()},
+                {"progress", buffer.getExportProgress()},
+                {"totalTicks", buffer.getTickCount()},
+                {"currentTick", buffer.getCurrentTick()}
+                }), "application/json");
+            });
+
+        // GET /ticks/count - Get tick count in buffer
+        server_.Get("/ticks/count", [this](const httplib::Request&, httplib::Response& res) {
+            res.set_content(jsonResponse({
+                {"count", sim_.getTickBuffer().getTickCount()},
+                {"currentTick", sim_.getTickBuffer().getCurrentTick()}
+                }), "application/json");
             });
     }
 

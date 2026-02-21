@@ -42,8 +42,6 @@ namespace market {
     std::optional<Order> MeanReversionTrader::decide(const MarketState& state) {
         double rMult = rtConfig_ ? rtConfig_->meanReversion.reactionMult : 0.2;
         double lpMax = rtConfig_ ? rtConfig_->meanReversion.limitPriceSpreadMax : 0.005;
-        double ssW = rtConfig_ ? rtConfig_->meanReversion.sentSymbolWeight : 0.2;
-        double sgW = rtConfig_ ? rtConfig_->meanReversion.sentGlobalWeight : 0.1;
 
         if (Random::uniform(0, 1) > params_.reactionSpeed * rMult * state.tickScale) {
             return std::nullopt;
@@ -71,19 +69,14 @@ namespace market {
 
         double zScore = (currentPrice - mean) / std;
 
-        std::string industry;
-        auto indIt = state.symbolToIndustry.find(symbol);
-        if (indIt != state.symbolToIndustry.end()) industry = indIt->second;
-        double symSent = 0.0;
-        auto symSentIt = symbolSentiment_.find(symbol);
-        if (symSentIt != symbolSentiment_.end()) symSent = symSentIt->second;
-        zScore += (symSent * ssW + sentimentBias_ * sgW);
+        double commoditySentiment = getCombinedSentiment(symbol);
+        zScore += commoditySentiment * 0.2 + sentimentBias_ * 0.1;
 
         if (zScore > zThreshold_) {
-            Volume position = getPosition(symbol);
-            if (position > 0) {
+            Volume maxSellable = getMaxSellable(symbol);
+            if (maxSellable > 0) {
                 double confidence = std::min(1.0, (std::abs(zScore) - zThreshold_) / 2.0);
-                Volume size = std::min(position, calculateOrderSize(currentPrice, confidence));
+                Volume size = std::min(maxSellable, calculateOrderSize(currentPrice, confidence));
 
                 if (size > 0) {
                     Price limitPrice = currentPrice * (1.0 - Random::uniform(0, lpMax));

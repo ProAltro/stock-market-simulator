@@ -3,11 +3,11 @@
 #include "utils/Logger.hpp"
 #include "utils/Random.hpp"
 #include <fstream>
-#include <shared_mutex>
+#include <iostream>
 
 namespace market {
 
-    Simulation::Simulation() {}
+    Simulation::Simulation() : tickBuffer_(1000000) {}
 
     Simulation::~Simulation() {
         stop();
@@ -16,180 +16,157 @@ namespace market {
     void Simulation::loadConfig(const std::string& configPath) {
         std::ifstream file(configPath);
         if (!file.is_open()) {
-            Logger::warn("Could not open config file: {}, using defaults", configPath);
+            Logger::warn("Config file not found: {}, using defaults", configPath);
             return;
         }
 
-        try {
-            config_ = nlohmann::json::parse(file);
-            loadConfig(config_);
-        }
-        catch (const std::exception& e) {
-            Logger::error("Failed to parse config: {}", e.what());
-        }
+        nlohmann::json config;
+        file >> config;
+        loadConfig(config);
     }
 
     void Simulation::loadConfig(const nlohmann::json& config) {
         config_ = config;
+        rtConfig_.fromJson(config);
 
-        // Populate RuntimeConfig from the legacy config.json layout
-        rtConfig_.fromLegacyJson(config);
-
-        // Sync convenience members from rtConfig
-        tickRateMs_ = rtConfig_.simulation.tickRateMs;
-        maxTicks_ = rtConfig_.simulation.maxTicks;
-        ticksPerDay_ = rtConfig_.simulation.ticksPerDay;
-        populateTicksPerDay_ = rtConfig_.simulation.populateTicksPerDay;
-        populateFineTicksPerDay_ = rtConfig_.simulation.populateFineTicksPerDay;
-        populateFineDays_ = rtConfig_.simulation.populateFineDays;
-
-        // Logging settings (not in RuntimeConfig – keeps Logger decoupled)
-        if (config.contains("logging")) {
-            auto& log = config["logging"];
-            Logger::init(
-                log.value("file", "market_sim.log"),
-                log.value("level", "info"),
-                log.value("console", true)
-            );
+        if (config.contains("simulation")) {
+            auto& s = config["simulation"];
+            if (s.contains("tick_rate_ms")) tickRateMs_ = s["tick_rate_ms"].get<int>();
+            if (s.contains("max_ticks")) maxTicks_ = s["max_ticks"].get<int>();
+            if (s.contains("ticks_per_day")) ticksPerDay_ = s["ticks_per_day"].get<int>();
+            if (s.contains("populate_ticks_per_day")) populateTicksPerDay_ = s["populate_ticks_per_day"].get<int>();
+            if (s.contains("populate_fine_ticks_per_day")) populateFineTicksPerDay_ = s["populate_fine_ticks_per_day"].get<int>();
+            if (s.contains("populate_fine_days")) populateFineDays_ = s["populate_fine_days"].get<int>();
         }
 
-        // Push news params to the NewsGenerator
-        engine_.getNewsGenerator().setLambda(rtConfig_.news.lambda);
-        engine_.getNewsGenerator().setGlobalImpactStd(rtConfig_.news.globalImpactStd);
-        engine_.getNewsGenerator().setIndustryImpactStd(rtConfig_.news.industryImpactStd);
-        engine_.getNewsGenerator().setCompanyImpactStd(rtConfig_.news.companyImpactStd);
-        engine_.getNewsGenerator().setPoliticalImpactStd(rtConfig_.news.politicalImpactStd);
-
-        Logger::info("Configuration loaded (RuntimeConfig populated)");
+        Logger::info("Config loaded: tickRate={}ms, ticksPerDay={}", tickRateMs_, ticksPerDay_);
     }
 
-    void Simulation::loadStocks(const std::string& stocksPath) {
-        std::ifstream file(stocksPath);
+    void Simulation::loadCommodities(const std::string& commoditiesPath) {
+        std::ifstream file(commoditiesPath);
         if (!file.is_open()) {
-            Logger::warn("Could not open stocks file: {}, using defaults", stocksPath);
+            Logger::error("Commodities file not found: {}", commoditiesPath);
             return;
         }
 
-        try {
-            stocksData_ = nlohmann::json::parse(file);
-            Logger::info("Loaded {} stocks from {}",
-                stocksData_.contains("stocks") ? stocksData_["stocks"].size() : 0,
-                stocksPath);
-        }
-        catch (const std::exception& e) {
-            Logger::error("Failed to parse stocks file: {}", e.what());
-        }
+        file >> commoditiesData_;
+        Logger::info("Loaded {} commodities from {}", commoditiesData_["commodities"].size(), commoditiesPath);
     }
 
     void Simulation::initialize() {
-        Logger::info("Initializing simulation...");
+        std::unique_lock lock(engineMutex_);
+        initializeUnlocked();
+    }
 
-        // Initialize SimClock with normal ticks per day
-        std::string startDate = rtConfig_.simulation.startDate;
-        engine_.getSimClock().initialize(startDate, ticksPerDay_);
-        engine_.getSimClock().setReferenceTicksPerDay(populateTicksPerDay_);
-
-        // Give engine a pointer to our RuntimeConfig
+    void Simulation::initializeUnlocked() {
         engine_.setRuntimeConfig(&rtConfig_);
 
-        // Create assets from stocks.json or fall back to defaults
-        if (stocksData_.contains("stocks") && !stocksData_["stocks"].empty()) {
-            createAssetsFromStocks();
+        if (!commoditiesData_.is_null() && commoditiesData_.contains("commodities")) {
+            createCommoditiesFromConfig();
         }
         else {
-            createDefaultAssets();
+            createDefaultCommodities();
         }
 
         createDefaultAgents();
-
-        // Seed market-maker inventory so they can post asks from tick 0
         seedMarketMakerInventory();
 
-        // Mark initial day-open prices for circuit breakers + set asset config
-        for (auto& [symbol, asset] : engine_.getAssets()) {
-            asset->setMaxDailyMove(rtConfig_.asset.circuitBreakerLimit);
-            asset->setImpactDampening(rtConfig_.asset.impactDampening);
-            asset->setFundamentalShockClamp(rtConfig_.asset.fundamentalShockClamp);
-            asset->setPriceFloor(rtConfig_.asset.priceFloor);
-            asset->markDayOpen();
+        engine_.getSimClock().initialize(rtConfig_.simulation.startDate, ticksPerDay_);
+
+        tickBuffer_.clear();
+        for (const auto& [symbol, commodity] : engine_.getCommodities()) {
+            tickBuffer_.addSymbol(symbol);
         }
 
-        Logger::info("Simulation initialized with {} assets and {} agents (start date: {})",
-            engine_.getAssets().size(), engine_.getAgents().size(), startDate);
+        Logger::info("Simulation initialized with {} commodities and {} agents",
+            engine_.getCommodities().size(), engine_.getAgents().size());
     }
 
     void Simulation::reinitialize() {
-        Logger::info("Re-initializing simulation from RuntimeConfig...");
-        stop();
+        Logger::info("[SIM] reinitialize() - acquiring lock...");
+        std::unique_lock lock(engineMutex_);
+        Logger::info("[SIM] reinitialize() - lock acquired, resetting engine");
         engine_.reset();
-        currentTick_ = 0;
-
-        tickRateMs_ = rtConfig_.simulation.tickRateMs;
-        maxTicks_ = rtConfig_.simulation.maxTicks;
-        ticksPerDay_ = rtConfig_.simulation.ticksPerDay;
-        populateTicksPerDay_ = rtConfig_.simulation.populateTicksPerDay;
-
-        // Push news params
-        engine_.getNewsGenerator().setLambda(rtConfig_.news.lambda);
-        engine_.getNewsGenerator().setGlobalImpactStd(rtConfig_.news.globalImpactStd);
-        engine_.getNewsGenerator().setIndustryImpactStd(rtConfig_.news.industryImpactStd);
-        engine_.getNewsGenerator().setCompanyImpactStd(rtConfig_.news.companyImpactStd);
-        engine_.getNewsGenerator().setPoliticalImpactStd(rtConfig_.news.politicalImpactStd);
-
-        initialize();
-        Logger::info("Re-initialization complete");
+        initializeUnlocked();
+        Logger::info("[SIM] reinitialize() - done");
     }
 
-    void Simulation::createAssetsFromStocks() {
-        for (const auto& stock : stocksData_["stocks"]) {
-            std::string symbol = stock["symbol"];
-            std::string industry = stock["industry"];
-            double price = stock["initialPrice"];
-            std::string name = stock.value("name", symbol);
-            std::string description = stock.value("description", "");
-            std::string sectorDetail = stock.value("sector_detail", "");
-            std::string character = stock.value("character", "mid_cap");
-            double baseVolatility = stock.value("baseVolatility", 0.025);
-            int64_t sharesOutstanding = stock.value("sharesOutstanding", static_cast<int64_t>(1e9));
+    void Simulation::createCommoditiesFromConfig() {
+        for (const auto& c : commoditiesData_["commodities"]) {
+            std::string symbol = c.value("symbol", "");
+            std::string name = c.value("name", symbol);
+            std::string category = c.value("category", "General");
+            double initialPrice = c.value("initialPrice", 50.0);
+            double baseProduction = c.value("baseProduction", 100.0);
+            double baseConsumption = c.value("baseConsumption", 100.0);
+            double volatility = c.value("volatility", 0.02);
+            double initialInventory = c.value("initialInventory", 50.0);
 
-            auto asset = std::make_unique<Asset>(
-                symbol, name, industry, price, baseVolatility, sharesOutstanding,
-                description, sectorDetail, character
+            auto commodity = std::make_unique<Commodity>(
+                symbol, name, category, initialPrice,
+                baseProduction, baseConsumption, volatility, initialInventory
             );
 
-            engine_.addAsset(std::move(asset));
+            // Apply runtime config to commodity
+            commodity->setImpactDampening(rtConfig_.commodity.impactDampening);
+            commodity->setPriceFloor(rtConfig_.commodity.priceFloor);
+            commodity->setMaxDailyMove(rtConfig_.commodity.circuitBreakerLimit);
+            commodity->setSupplyDecayRate(rtConfig_.commodity.supplyDecayRate);
+            commodity->setDemandDecayRate(rtConfig_.commodity.demandDecayRate);
 
-            Logger::info("Loaded stock {} ({}) - {} @ ${:.2f}", symbol, name, industry, price);
+            if (c.contains("crossEffects")) {
+                std::vector<CrossEffect> effects;
+                for (auto it = c["crossEffects"].begin(); it != c["crossEffects"].end(); ++it) {
+                    CrossEffect effect;
+                    effect.targetSymbol = it.key();
+                    effect.coefficient = it.value().get<double>();
+                    effects.push_back(effect);
+                }
+                engine_.setCrossEffects(symbol, effects);
+            }
+
+            engine_.addCommodity(std::move(commodity));
         }
     }
 
-    void Simulation::createDefaultAssets() {
-        // Fallback: create a few default assets if no stocks.json loaded
-        std::vector<std::tuple<std::string, std::string, double>> defaults = {
-            {"NXON", "Technology", 245.0},
-            {"QBIT", "Technology", 89.50},
-            {"AXFN", "Finance", 178.0},
-            {"MEDX", "Healthcare", 312.0},
-            {"ELIX", "Energy", 67.25}
+    void Simulation::createDefaultCommodities() {
+        std::vector<std::tuple<std::string, std::string, std::string, double>> defaults = {
+            {"OIL", "Crude Oil", "Energy", 75.0},
+            {"STEEL", "Steel", "Construction", 120.0},
+            {"WOOD", "Lumber", "Construction", 45.0},
+            {"BRICK", "Brick", "Construction", 25.0},
+            {"GRAIN", "Grain", "Agriculture", 8.0}
         };
 
-        for (const auto& [symbol, industry, price] : defaults) {
-            engine_.addAsset(std::make_unique<Asset>(symbol, symbol, industry, price));
+        for (const auto& [sym, name, cat, price] : defaults) {
+            auto commodity = std::make_unique<Commodity>(sym, name, cat, price);
+            // Apply runtime config to commodity
+            commodity->setImpactDampening(rtConfig_.commodity.impactDampening);
+            commodity->setPriceFloor(rtConfig_.commodity.priceFloor);
+            commodity->setMaxDailyMove(rtConfig_.commodity.circuitBreakerLimit);
+            commodity->setSupplyDecayRate(rtConfig_.commodity.supplyDecayRate);
+            commodity->setDemandDecayRate(rtConfig_.commodity.demandDecayRate);
+            engine_.addCommodity(std::move(commodity));
         }
+
+        engine_.setCrossEffects("OIL", { {"STEEL", 0.25}, {"BRICK", 0.15}, {"WOOD", 0.10} });
+        engine_.setCrossEffects("STEEL", { {"OIL", 0.30}, {"BRICK", 0.35}, {"WOOD", 0.20} });
+        engine_.setCrossEffects("WOOD", { {"BRICK", 0.30}, {"STEEL", 0.15} });
+        engine_.setCrossEffects("BRICK", { {"STEEL", 0.40}, {"WOOD", 0.35} });
     }
 
     void Simulation::createDefaultAgents() {
-        int numFundamental = rtConfig_.agentCounts.fundamental;
-        int numMomentum = rtConfig_.agentCounts.momentum;
-        int numMeanReversion = rtConfig_.agentCounts.meanReversion;
-        int numNoise = rtConfig_.agentCounts.noise;
-        int numMarketMakers = rtConfig_.agentCounts.marketMaker;
-        double meanCash = rtConfig_.agentCash.meanCash;
-        double stdCash = rtConfig_.agentCash.stdCash;
-
         auto agents = AgentFactory::createPopulation(
-            numFundamental, numMomentum, numMeanReversion,
-            numNoise, numMarketMakers, meanCash, stdCash,
+            rtConfig_.agentCounts.supplyDemand,
+            rtConfig_.agentCounts.momentum,
+            rtConfig_.agentCounts.meanReversion,
+            rtConfig_.agentCounts.noise,
+            rtConfig_.agentCounts.marketMaker,
+            rtConfig_.agentCounts.crossEffects,
+            rtConfig_.agentCounts.inventory,
+            rtConfig_.agentCounts.event,
+            rtConfig_.agentCash.meanCash,
+            rtConfig_.agentCash.stdCash,
             &rtConfig_
         );
 
@@ -197,55 +174,38 @@ namespace market {
     }
 
     void Simulation::seedMarketMakerInventory() {
-        int seedQty = rtConfig_.marketMaker.initialInventoryPerStock;
-        if (seedQty <= 0) return;
-
-        std::vector<std::string> symbols;
-        for (const auto& [sym, _] : engine_.getAssets()) {
-            symbols.push_back(sym);
-        }
+        int invPerCommodity = rtConfig_.marketMaker.initialInventoryPerCommodity;
 
         for (auto& agent : engine_.getMutableAgents()) {
             if (agent->getType() == "MarketMaker") {
-                for (const auto& sym : symbols) {
-                    auto* asset = engine_.getAsset(sym);
-                    if (!asset) continue;
-                    agent->seedInventory(sym, seedQty, asset->getPrice());
+                for (const auto& [symbol, commodity] : engine_.getCommodities()) {
+                    agent->seedInventory(symbol, invPerCommodity, commodity->getPrice());
                 }
             }
         }
-        Logger::info("Seeded market makers with {} shares per stock", seedQty);
     }
 
     void Simulation::populate(int days, const std::string& startDate) {
-        Logger::info("Populating {} days of history starting from {}", days, startDate);
         populating_ = true;
         populateTargetDays_ = days;
         populateCurrentDay_ = 0;
-        {
-            std::unique_lock<std::shared_mutex> lock(engineMutex_);
-            populateStartDate_ = startDate;
-        }
+        populateStartDate_ = startDate;
 
-        // Calculate day boundaries for variable tick rates
-        // Last N days use fine tick rate (1 min granularity), rest use normal rate (2.5 min)
+        std::unique_lock lock(engineMutex_);
+
         int normalDays = std::max(0, days - populateFineDays_);
-        int fineDays = std::min(days, populateFineDays_);
-        
-        Logger::info("Populate plan: {} days @ {} ticks/day, then {} days @ {} ticks/day",
-            normalDays, populateTicksPerDay_, fineDays, populateFineTicksPerDay_);
+        int fineDays = std::min(populateFineDays_, days);
 
-        // Phase 1: Normal tick rate for earlier days (2.5 min granularity)
+        engine_.getSimClock().initialize(startDate, populateTicksPerDay_);
+        engine_.getSimClock().setReferenceTicksPerDay(populateTicksPerDay_);
+
         if (normalDays > 0) {
-            engine_.getSimClock().initialize(startDate, populateTicksPerDay_);
-            engine_.getSimClock().setReferenceTicksPerDay(populateTicksPerDay_);
-
             int totalTicks = normalDays * populateTicksPerDay_;
             for (int i = 0; i < totalTicks; ++i) {
                 engine_.tick();
                 currentTick_++;
+                recordTickToBuffer();
 
-                // Update progress at each day boundary
                 if (i % populateTicksPerDay_ == 0) {
                     populateCurrentDay_ = i / populateTicksPerDay_;
                 }
@@ -257,15 +217,9 @@ namespace market {
                 }
             }
             Logger::info("Phase 1 complete: {} normal days populated", normalDays);
-        } else {
-            // Initialize clock for fine mode start
-            engine_.getSimClock().initialize(startDate, populateFineTicksPerDay_);
-            engine_.getSimClock().setReferenceTicksPerDay(populateFineTicksPerDay_);
         }
 
-        // Phase 2: Fine tick rate for last N days (1 min granularity)
         if (fineDays > 0) {
-            // Switch to fine tick rate
             engine_.getSimClock().setTicksPerDay(populateFineTicksPerDay_);
             engine_.getSimClock().setReferenceTicksPerDay(populateFineTicksPerDay_);
 
@@ -273,8 +227,8 @@ namespace market {
             for (int i = 0; i < totalTicks; ++i) {
                 engine_.tick();
                 currentTick_++;
+                recordTickToBuffer();
 
-                // Update progress at each day boundary
                 if (i % populateFineTicksPerDay_ == 0) {
                     populateCurrentDay_ = normalDays + (i / populateFineTicksPerDay_);
                 }
@@ -288,72 +242,64 @@ namespace market {
             Logger::info("Phase 2 complete: {} fine days populated", fineDays);
         }
 
-        // Switch back to normal mode ticks per day after populating
         engine_.getSimClock().setTicksPerDay(ticksPerDay_);
-
-        populateCurrentDay_ = days;  // Mark complete
+        populateCurrentDay_ = days;
         populating_ = false;
         populateTargetDays_ = 0;
+
         Logger::info("Populate complete. Current sim date: {}",
             engine_.getSimClock().currentDateString());
     }
 
-    std::string Simulation::getPopulateStartDate() const {
-        std::shared_lock<std::shared_mutex> lock(engineMutex_);
-        return populateStartDate_;
-    }
+    void Simulation::populateTicks(uint64_t targetTicks, const std::string& startDate) {
+        populating_ = true;
+        populateTargetDays_ = 0;
+        populateCurrentDay_ = 0;
+        populateStartDate_ = startDate;
 
-    void Simulation::restore(const nlohmann::json& stateData) {
-        Logger::info("Restoring simulation state...");
+        std::unique_lock lock(engineMutex_);
 
-        // Restore SimClock position
-        if (stateData.contains("simDate") && stateData.contains("tickOfDay")) {
-            std::string date = stateData["simDate"];
-            int tickOfDay = stateData["tickOfDay"];
-            engine_.getSimClock().initialize(date, ticksPerDay_);
-            // Advance to the right tick of day
-            for (int i = 0; i < tickOfDay; ++i) {
-                engine_.getSimClock().tick();
+        tickBuffer_.clear();
+        for (const auto& [symbol, commodity] : engine_.getCommodities()) {
+            tickBuffer_.addSymbol(symbol);
+        }
+
+        engine_.getSimClock().initialize(startDate, populateTicksPerDay_);
+        engine_.getSimClock().setReferenceTicksPerDay(populateTicksPerDay_);
+
+        Logger::info("Populating {} ticks...", targetTicks);
+
+        uint64_t reportInterval = targetTicks / 20;
+        if (reportInterval == 0) reportInterval = 10000;
+
+        for (uint64_t i = 0; i < targetTicks; ++i) {
+            engine_.tick();
+            currentTick_ = i + 1;
+            recordTickToBuffer();
+
+            if (i % reportInterval == 0) {
+                Logger::info("Populate progress: {}/{} ticks ({:.1f}%)",
+                    i + 1, targetTicks, 100.0 * (i + 1) / targetTicks);
             }
         }
 
-        // Restore asset prices
-        if (stateData.contains("prices")) {
-            for (auto& [symbol, price] : stateData["prices"].items()) {
-                auto* asset = engine_.getAsset(symbol);
-                if (asset) {
-                    asset->setPrice(price.get<double>());
-                }
-            }
-        }
-
-        // Restore candles if provided
-        if (stateData.contains("candles")) {
-            // Candles would be loaded by the backend sync service
-            // The C++ side just needs prices; candles are re-served from DB
-            Logger::info("Candle data acknowledged (served from database)");
-        }
-
-        Logger::info("State restored. Sim date: {}", engine_.getSimClock().currentDateString());
+        populating_ = false;
+        Logger::info("Populate complete. Total ticks: {}", currentTick_.load());
     }
 
     void Simulation::start() {
-        if (running_.load()) {
-            Logger::warn("Simulation already running");
-            return;
-        }
+        if (running_.load()) return;
 
         running_ = true;
         paused_ = false;
 
         simThread_ = std::thread(&Simulation::runLoop, this);
-
-        Logger::info("Simulation started (tick rate: {}ms)", tickRateMs_);
+        Logger::info("Simulation started");
     }
 
     void Simulation::pause() {
         paused_ = true;
-        Logger::info("Simulation paused at tick {}", currentTick_.load());
+        Logger::info("Simulation paused");
     }
 
     void Simulation::resume() {
@@ -363,40 +309,39 @@ namespace market {
 
     void Simulation::stop() {
         running_ = false;
-
         if (simThread_.joinable()) {
             simThread_.join();
         }
-
-        Logger::info("Simulation stopped at tick {}", currentTick_.load());
+        Logger::info("Simulation stopped");
     }
 
     void Simulation::reset() {
         stop();
-        engine_.reset();
         currentTick_ = 0;
+        std::unique_lock lock(engineMutex_);
+        engine_.reset();
         Logger::info("Simulation reset");
     }
 
     void Simulation::step(int count) {
-        std::unique_lock<std::shared_mutex> lock(engineMutex_);
+        std::unique_lock lock(engineMutex_);
         for (int i = 0; i < count; ++i) {
             engine_.tick();
             currentTick_++;
+            recordTickToBuffer();
+
+            if (maxTicks_ > 0 && currentTick_ >= maxTicks_) {
+                break;
+            }
         }
     }
 
     void Simulation::runLoop() {
         while (running_.load()) {
             if (!paused_.load()) {
-                {
-                    std::unique_lock<std::shared_mutex> lock(engineMutex_);
-                    engine_.tick();
-                }
-                currentTick_++;
+                step(1);
 
-                if (maxTicks_ > 0 && currentTick_.load() >= static_cast<uint64_t>(maxTicks_)) {
-                    Logger::info("Reached max ticks ({}), stopping", maxTicks_);
+                if (maxTicks_ > 0 && currentTick_ >= maxTicks_) {
                     running_ = false;
                     break;
                 }
@@ -406,161 +351,99 @@ namespace market {
         }
     }
 
+    std::string Simulation::getPopulateStartDate() const {
+        return populateStartDate_;
+    }
+
     nlohmann::json Simulation::getStateJson() const {
-        std::shared_lock<std::shared_mutex> lock(engineMutex_);
+        // No mutex needed — all fields are std::atomic, so /state works during populate
         nlohmann::json state;
-        state["tick"] = currentTick_.load();
         state["running"] = running_.load();
         state["paused"] = paused_.load();
         state["populating"] = populating_.load();
-        state["tickRateMs"] = tickRateMs_;
-
-        // Populate progress
-        if (populating_.load()) {
-            state["populateTargetDays"] = populateTargetDays_.load();
-            state["populateCurrentDay"] = populateCurrentDay_.load();
-            state["populateStartDate"] = populateStartDate_;
-        }
-
-        // Simulated time info
-        auto& clock = engine_.getSimClock();
-        state["simDate"] = clock.currentDateString();
-        state["simDateTime"] = clock.currentDateTimeString();
-        state["simTimestamp"] = clock.currentTimestamp();
-
-        auto& macro = engine_.getMacroEnvironment();
-        state["macro"] = {
-            {"globalSentiment", macro.getGlobalSentiment()},
-            {"interestRate", macro.getInterestRate()},
-            {"riskIndex", macro.getRiskIndex()},
-            {"volatilityIndex", macro.getVolatilityIndex()}
+        state["currentTick"] = currentTick_.load();
+        state["populateProgress"] = {
+            {"target", populateTargetDays_.load()},
+            {"current", populateCurrentDay_.load()}
         };
-
+        // simDate needs the engine — only safe when not populating
+        if (!populating_.load()) {
+            try {
+                std::shared_lock lock(engineMutex_);
+                state["simDate"] = engine_.getSimClock().currentDateString();
+            }
+            catch (...) {
+                state["simDate"] = "unknown";
+            }
+        }
+        else {
+            state["simDate"] = "populating...";
+        }
         return state;
     }
 
-    nlohmann::json Simulation::getAssetsJson() const {
-        std::shared_lock<std::shared_mutex> lock(engineMutex_);
-        nlohmann::json assets = nlohmann::json::array();
+    nlohmann::json Simulation::getCommoditiesJson() const {
+        std::shared_lock lock(engineMutex_);
 
-        for (const auto& [symbol, asset] : engine_.getAssets()) {
-            nlohmann::json a;
-            a["symbol"] = symbol;
-            a["name"] = asset->getName();
-            a["industry"] = asset->getIndustry();
-            a["sectorDetail"] = asset->getSectorDetail();
-            a["character"] = asset->getCharacter();
-            a["price"] = asset->getPrice();
-            a["fundamental"] = asset->getFundamentalValue();
-            a["volume"] = asset->getDailyVolume();
-            a["mispricing"] = asset->getMispricing();
-            a["return"] = asset->getReturn(1);
-            a["volatility"] = asset->getVolatilityEstimate(20);
-            a["marketCap"] = asset->getMarketCap();
-
-            // Last 50 prices for charting
-            const auto& history = asset->getPriceHistory();
-            int start = std::max(0, static_cast<int>(history.size()) - 50);
-            a["priceHistory"] = std::vector<double>(history.begin() + start, history.end());
-
-            assets.push_back(a);
+        nlohmann::json arr = nlohmann::json::array();
+        for (const auto& [symbol, commodity] : engine_.getCommodities()) {
+            nlohmann::json c;
+            c["symbol"] = symbol;
+            c["name"] = commodity->getName();
+            c["category"] = commodity->getCategory();
+            c["price"] = commodity->getPrice();
+            c["dailyVolume"] = commodity->getDailyVolume();
+            c["supplyDemand"] = {
+                {"production", commodity->getSupplyDemand().production},
+                {"consumption", commodity->getSupplyDemand().consumption},
+                {"imports", commodity->getSupplyDemand().imports},
+                {"exports", commodity->getSupplyDemand().exports},
+                {"inventory", commodity->getSupplyDemand().inventory},
+                {"imbalance", commodity->getSupplyDemand().getImbalance()}
+            };
+            arr.push_back(c);
         }
-
-        return assets;
-    }
-
-    nlohmann::json Simulation::getStockInfoJson() const {
-        // Return stock metadata for frontend display
-        if (stocksData_.contains("stocks")) {
-            return stocksData_["stocks"];
-        }
-        return nlohmann::json::array();
+        return arr;
     }
 
     nlohmann::json Simulation::getAgentSummaryJson() const {
-        std::shared_lock<std::shared_mutex> lock(engineMutex_);
-        std::map<std::string, int> typeCounts;
-        std::map<std::string, double> typeCash;
-        std::map<std::string, double> typePortfolioValue;
-        std::map<std::string, double> typeSentiment;
-        std::map<std::string, int> typeTotalPositions;
+        std::shared_lock lock(engineMutex_);
 
-        // Gather current prices for portfolio valuation
-        std::map<std::string, Price> prices;
-        for (const auto& [sym, asset] : engine_.getAssets()) {
-            prices[sym] = asset->getPrice();
-        }
-
+        std::map<std::string, int> counts;
         for (const auto& agent : engine_.getAgents()) {
-            const auto& type = agent->getType();
-            typeCounts[type]++;
-            typeCash[type] += agent->getCash();
-            typePortfolioValue[type] += agent->getPortfolioValue(prices);
-            typeSentiment[type] += agent->getSentimentBias();
-            typeTotalPositions[type] += static_cast<int>(agent->getPortfolio().size());
+            counts[agent->getType()]++;
         }
 
-        // Per-type order/trade stats
-        const auto& agentStats = engine_.getAgentTypeStats();
-
-        nlohmann::json summary = nlohmann::json::array();
-        for (const auto& [type, count] : typeCounts) {
-            nlohmann::json entry = {
-                {"type", type},
-                {"count", count},
-                {"totalCash", typeCash[type]},
-                {"avgCash", typeCash[type] / count},
-                {"totalPortfolioValue", typePortfolioValue[type]},
-                {"avgPortfolioValue", typePortfolioValue[type] / count},
-                {"avgSentiment", typeSentiment[type] / count},
-                {"totalPositions", typeTotalPositions[type]}
-            };
-
-            // Attach order/trade stats if available
-            auto sit = agentStats.find(type);
-            if (sit != agentStats.end()) {
-                entry["ordersPlaced"] = sit->second.ordersPlaced;
-                entry["buyOrders"] = sit->second.buyOrders;
-                entry["sellOrders"] = sit->second.sellOrders;
-                entry["fills"] = sit->second.fills;
-                entry["volumeTraded"] = sit->second.volumeTraded;
-                entry["cashSpent"] = sit->second.cashSpent;
-                entry["cashReceived"] = sit->second.cashReceived;
-            }
-
-            summary.push_back(entry);
+        nlohmann::json arr = nlohmann::json::array();
+        for (const auto& [type, count] : counts) {
+            arr.push_back({ {"type", type}, {"count", count} });
         }
-
-        return summary;
+        return arr;
     }
 
     nlohmann::json Simulation::getMetricsJson() const {
-        std::shared_lock<std::shared_mutex> lock(engineMutex_);
+        std::shared_lock lock(engineMutex_);
+
         auto metrics = engine_.getMetrics();
+        nlohmann::json m;
+        m["totalTicks"] = metrics.totalTicks;
+        m["totalTrades"] = metrics.totalTrades;
+        m["totalOrders"] = metrics.totalOrders;
+        m["avgSpread"] = metrics.avgSpread;
+        return m;
+    }
 
-        nlohmann::json j;
-        j["totalTicks"] = metrics.totalTicks;
-        j["totalTrades"] = metrics.totalTrades;
-        j["totalOrders"] = metrics.totalOrders;
-        j["avgSpread"] = metrics.avgSpread;
-        j["returns"] = metrics.returns;
+    void Simulation::restore(const nlohmann::json& stateData) {
+        Logger::warn("State restoration not yet implemented");
+        throw std::runtime_error("State restoration not implemented");
+    }
 
-        // Per-agent-type stats
-        nlohmann::json statsJson;
-        for (const auto& [type, stats] : metrics.agentTypeStats) {
-            statsJson[type] = {
-                {"ordersPlaced", stats.ordersPlaced},
-                {"buyOrders", stats.buyOrders},
-                {"sellOrders", stats.sellOrders},
-                {"fills", stats.fills},
-                {"volumeTraded", stats.volumeTraded},
-                {"cashSpent", stats.cashSpent},
-                {"cashReceived", stats.cashReceived}
-            };
+    void Simulation::recordTickToBuffer() {
+        for (const auto& [symbol, commodity] : engine_.getCommodities()) {
+            Price price = commodity->getPrice();
+            tickBuffer_.recordTick(symbol, price, price, price, price, 0);
         }
-        j["agentTypeStats"] = statsJson;
-
-        return j;
+        tickBuffer_.advanceTick();
     }
 
 } // namespace market

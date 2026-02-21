@@ -1,0 +1,162 @@
+<div x-show="currentPage === 'compete'" class="page compete-page">
+  <header class="page-header">
+    <h1>Submit Algorithm</h1>
+    <p class="subtitle">
+      Write your trading algorithm and run it on 1 million ticks of commodity
+      data
+    </p>
+  </header>
+
+  <div class="compete-layout">
+    <div class="editor-section">
+      <div class="editor-header">
+        <div class="lang-tabs">
+          <button
+            @click="selectTemplate('python')"
+            :class="{ active: selectedLanguage === 'python' }"
+          >
+            Python
+          </button>
+          <button
+            @click="selectTemplate('cpp')"
+            :class="{ active: selectedLanguage === 'cpp' }"
+          >
+            C++
+          </button>
+        </div>
+        <div class="editor-actions">
+          <button @click="downloadData()" class="btn btn-small btn-secondary">
+            Download Data (100K)
+          </button>
+          <button
+            @click="navigateTo('api')"
+            class="btn btn-small btn-secondary"
+          >
+            API Docs
+          </button>
+        </div>
+      </div>
+
+      <div id="monaco-editor-container" class="code-editor-container"></div>
+
+      <div class="editor-footer">
+        <div class="info">
+          <span
+            x-text="dataInfo ? `1M ticks across ${dataInfo.commodities?.length || 5} commodities` : ''"
+          ></span>
+          <span x-text="`Starting cash: $100,000`"></span>
+        </div>
+        <button
+          @click="submitAlgorithm()"
+          :disabled="submitting"
+          class="btn btn-primary"
+        >
+          <span x-show="!submitting">Run Algorithm</span>
+          <span x-show="submitting">Running...</span>
+        </button>
+      </div>
+    </div>
+
+    <div class="result-section">
+      <h3>Result</h3>
+
+      <div x-show="!submissionResult" class="result-placeholder">
+        <p>Submit your algorithm to see results</p>
+      </div>
+
+      <div
+        x-show="submissionResult?.status === 'pending'"
+        class="result-pending"
+      >
+        <p>Algorithm submitted, waiting for execution...</p>
+      </div>
+
+      <div
+        x-show="submissionResult?.status === 'running'"
+        class="result-running"
+      >
+        <p>Running on 1M ticks...</p>
+      </div>
+
+      <div
+        x-show="submissionResult?.status === 'completed'"
+        class="result-success"
+      >
+        <div class="result-main">
+          <span class="label">Final Net Worth</span>
+          <span
+            class="value"
+            x-text="formatCurrency(submissionResult?.finalNetWorth, 'USD')"
+          ></span>
+        </div>
+        <div class="result-details">
+          <div class="detail">
+            <span>Cash Balance</span>
+            <span
+              x-text="formatCurrency(submissionResult?.cashBalance, 'USD')"
+            ></span>
+          </div>
+          <div class="detail">
+            <span>Total Trades</span>
+            <span x-text="submissionResult?.totalTrades"></span>
+          </div>
+          <div class="detail">
+            <span>Execution Time</span>
+            <span x-text="`${submissionResult?.executionTimeMs}ms`"></span>
+          </div>
+        </div>
+        <div x-show="submissionResult?.positions" class="positions">
+          <h4>Final Positions</h4>
+          <template
+            x-for="(qty, symbol) in submissionResult?.positions"
+            :key="symbol"
+          >
+            <div class="position-row">
+              <span x-text="symbol"></span>
+              <span x-text="qty"></span>
+            </div>
+          </template>
+        </div>
+      </div>
+
+      <div x-show="submissionResult?.status === 'failed'" class="result-error">
+        <h4>Error</h4>
+        <pre x-text="submissionResult?.error"></pre>
+      </div>
+    </div>
+  </div>
+
+  <div class="submissions-history" x-show="submissions.length > 0">
+    <h3>Your Submissions</h3>
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Date</th>
+          <th>Language</th>
+          <th>Net Worth</th>
+          <th>Trades</th>
+          <th>Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        <template x-for="sub in submissions" :key="sub.id">
+          <tr>
+            <td x-text="new Date(sub.createdAt).toLocaleDateString()"></td>
+            <td x-text="sub.language"></td>
+            <td
+              x-text="sub.finalNetWorth ? formatCurrency(sub.finalNetWorth, 'USD') : '-'"
+            ></td>
+            <td x-text="sub.totalTrades || '-'"></td>
+            <td>
+              <span
+                class="status-badge"
+                :class="sub.status"
+                x-text="sub.status"
+              ></span>
+            </td>
+          </tr>
+        </template>
+      </tbody>
+    </table>
+  </div>
+</div>

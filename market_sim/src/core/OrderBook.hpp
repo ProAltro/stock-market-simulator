@@ -69,6 +69,13 @@ namespace market {
         // Map for O(1) order lookup for cancellation
         std::map<OrderId, bool> activeOrders_;
 
+        // O(1) best price tracking: price -> best order at that price
+        // Uses lazy deletion: entry is valid if orderId exists in activeOrders_ and is true
+        std::map<Price, OrderId, std::greater<Price>> bestBidByPrice_;  // descending by price
+        std::map<Price, OrderId> bestAskByPrice_;                        // ascending by price
+        std::map<OrderId, Price> orderIdToBidPrice_;  // orderId -> price for removal
+        std::map<OrderId, Price> orderIdToAskPrice_;
+
         // Thread safety
         mutable std::mutex mutex_;
 

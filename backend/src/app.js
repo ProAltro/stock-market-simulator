@@ -4,24 +4,16 @@ import cors from "@fastify/cors";
 import jwt from "@fastify/jwt";
 import rateLimit from "@fastify/rate-limit";
 
-// Import plugins
 import prismaPlugin from "./plugins/prisma.js";
 import redisPlugin from "./plugins/redis.js";
-import currencyPlugin from "./plugins/currency.js";
 
-// Import routes
 import authRoutes from "./modules/auth/routes.js";
-import instrumentRoutes from "./modules/instruments/routes.js";
-import marketDataRoutes from "./modules/market-data/routes.js";
-import orderRoutes from "./modules/orders/routes.js";
-import portfolioRoutes from "./modules/portfolio/routes.js";
-import leaderboardRoutes from "./modules/leaderboard/routes.js";
-import profileRoutes from "./modules/profile/routes.js";
-import backtestRoutes from "./modules/backtest/routes.js";
-import marketSimRoutes from "./modules/market-sim/routes.js";
-import marketSimAdminRoutes from "./modules/market-sim/admin.js";
-import { startSync, stopSync } from "./services/market/simSyncService.js";
-import { initMarketSim } from "./services/market/simInitService.js";
+import dataRoutes from "./modules/data/routes.js";
+import submissionsRoutes from "./modules/submissions/routes.js";
+import marketRoutes from "./modules/market/routes.js";
+import newsRoutes from "./modules/news/routes.js";
+import { healthCheck } from "./services/judge0/judge0.js";
+
 const app = Fastify({
   logger: {
     level: process.env.NODE_ENV === "production" ? "info" : "debug",
@@ -35,7 +27,6 @@ const app = Fastify({
   },
 });
 
-// Register CORS
 await app.register(cors, {
   origin:
     process.env.NODE_ENV === "production"
@@ -44,27 +35,21 @@ await app.register(cors, {
   credentials: true,
 });
 
-// Register rate limiting
 await app.register(rateLimit, {
-  max: 300,
+  max: 100,
   timeWindow: "1 minute",
-  allowList: (req) => req.url.startsWith("/api/market-sim"),
 });
 
-// Register JWT
 await app.register(jwt, {
-  secret: process.env.JWT_SECRET || "dev-secret",
+  secret: process.env.JWT_SECRET || "dev-secret-change-in-production",
   sign: {
     expiresIn: process.env.JWT_EXPIRES_IN || "7d",
   },
 });
 
-// Register database and cache plugins
 await app.register(prismaPlugin);
 await app.register(redisPlugin);
-await app.register(currencyPlugin);
 
-// Authentication decorator
 app.decorate("authenticate", async function (request, reply) {
   try {
     await request.jwtVerify();
@@ -73,39 +58,25 @@ app.decorate("authenticate", async function (request, reply) {
   }
 });
 
-// Base currency decorator - attaches user's preferred currency to request
-// Must run after authenticate. Routes opt-in via preHandler: [fastify.authenticate, fastify.withBaseCurrency]
-app.decorate("withBaseCurrency", async function (request, reply) {
-  try {
-    const user = await app.prisma.user.findUnique({
-      where: { id: request.user.userId },
-      select: { currency: true },
-    });
-    request.baseCurrency = (user?.currency || "USD").toUpperCase();
-  } catch (err) {
-    request.baseCurrency = "USD";
-  }
+app.get("/health", async () => {
+  const judge0 = await healthCheck();
+  
+  return {
+    status: "ok",
+    timestamp: new Date().toISOString(),
+    services: {
+      database: "connected",
+      judge0: judge0.healthy ? "healthy" : "unavailable",
+    },
+  };
 });
 
-// Health check
-app.get("/health", async () => ({
-  status: "ok",
-  timestamp: new Date().toISOString(),
-}));
-
-// Register routes
 app.register(authRoutes, { prefix: "/api/auth" });
-app.register(instrumentRoutes, { prefix: "/api/instruments" });
-app.register(marketDataRoutes, { prefix: "/api/market" });
-app.register(orderRoutes, { prefix: "/api/orders" });
-app.register(portfolioRoutes, { prefix: "/api/portfolio" });
-app.register(leaderboardRoutes, { prefix: "/api/leaderboard" });
-app.register(profileRoutes, { prefix: "/api/profile" });
-app.register(backtestRoutes, { prefix: "/api/backtest" });
-app.register(marketSimRoutes, { prefix: "/api/market-sim" });
-app.register(marketSimAdminRoutes, { prefix: "/api/market-sim/admin" });
+app.register(dataRoutes, { prefix: "/api/data" });
+app.register(submissionsRoutes, { prefix: "/api/submissions" });
+app.register(marketRoutes, { prefix: "/api/market" });
+app.register(newsRoutes, { prefix: "/api/news" });
 
-// Global error handler
 app.setErrorHandler((error, request, reply) => {
   app.log.error(error);
 
@@ -118,21 +89,16 @@ app.setErrorHandler((error, request, reply) => {
   });
 });
 
-// Start server
 const start = async () => {
   try {
     const port = process.env.PORT || 3000;
     await app.listen({ port: Number(port), host: "0.0.0.0" });
-    app.log.info(`🚀 Server running on http://localhost:${port}`);
+    app.log.info(`🚀 Algorithmic Trading Competition Platform`);
+    app.log.info(`📡 API running on http://localhost:${port}`);
+    app.log.info(`📊 Submit algorithms at POST /api/submissions`);
 
-    // Initialize market sim (push tuned config, populate if needed), then start sync
-    initMarketSim().then(() => {
-      startSync(app.prisma);
-    });
-
-    // Graceful shutdown
     const shutdown = () => {
-      stopSync();
+      app.log.info("Shutting down...");
       app.close();
     };
     process.on("SIGINT", shutdown);

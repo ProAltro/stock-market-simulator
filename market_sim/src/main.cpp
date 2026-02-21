@@ -6,7 +6,6 @@
 
 using namespace market;
 
-// Global for signal handling
 static Simulation* g_sim = nullptr;
 static ApiServer* g_api = nullptr;
 
@@ -22,32 +21,33 @@ void signalHandler(int signal) {
 }
 
 int main(int argc, char* argv[]) {
-    // Setup signal handlers
     std::signal(SIGINT, signalHandler);
     std::signal(SIGTERM, signalHandler);
 
-    // Parse command line
-    std::string configPath = "config.json";
-    std::string stocksPath = "stocks.json";
+    std::string configPath = "commodities.json";
     std::string host = "0.0.0.0";
+    std::string dataDir = "/data";
     int port = 8080;
     bool autoStart = false;
     bool populate = false;
+    bool populateByTicks = false;
+    bool exportOnStart = false;
     int populateDays = 180;
+    uint64_t populateTicksCount = 1000000;
 
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
         if (arg == "--config" && i + 1 < argc) {
             configPath = argv[++i];
         }
-        else if (arg == "--stocks" && i + 1 < argc) {
-            stocksPath = argv[++i];
-        }
         else if (arg == "--host" && i + 1 < argc) {
             host = argv[++i];
         }
         else if (arg == "--port" && i + 1 < argc) {
             port = std::stoi(argv[++i]);
+        }
+        else if (arg == "--data-dir" && i + 1 < argc) {
+            dataDir = argv[++i];
         }
         else if (arg == "--auto-start") {
             autoStart = true;
@@ -58,54 +58,77 @@ int main(int argc, char* argv[]) {
                 populateDays = std::stoi(argv[++i]);
             }
         }
+        else if (arg == "--populate-ticks") {
+            populateByTicks = true;
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                populateTicksCount = std::stoull(argv[++i]);
+            }
+        }
+        else if (arg == "--export-on-start") {
+            exportOnStart = true;
+        }
         else if (arg == "--help") {
-            std::cout << "Market Simulation Engine\n"
+            std::cout << "Commodity Market Simulation Engine\n"
                 << "Usage: market_sim [options]\n"
                 << "Options:\n"
-                << "  --config <path>    Path to config file (default: config.json)\n"
-                << "  --stocks <path>    Path to stocks JSON file (default: stocks.json)\n"
-                << "  --host <host>      API server host (default: 0.0.0.0)\n"
-                << "  --port <port>      API server port (default: 8080)\n"
-                << "  --auto-start       Start simulation immediately\n"
-                << "  --populate [days]  Populate historical data (default: 180 days)\n"
-                << "  --help             Show this help\n";
+                << "  --config <path>         Path to commodities JSON file (default: commodities.json)\n"
+                << "  --host <host>           API server host (default: 0.0.0.0)\n"
+                << "  --port <port>           API server port (default: 8080)\n"
+                << "  --data-dir <path>       Directory for data files (default: /data)\n"
+                << "  --auto-start            Start simulation immediately\n"
+                << "  --populate [days]       Populate historical data by days (default: 180 days)\n"
+                << "  --populate-ticks [n]    Populate exactly N ticks (default: 1000000)\n"
+                << "  --export-on-start       Export data after population\n"
+                << "  --help                  Show this help\n";
             return 0;
         }
     }
 
     try {
-        // Initialize logger first
-        Logger::init("market_sim.log", "info", true);
+        Logger::init("commodity_sim.log", "info", true);
 
-        Logger::info("=== Market Simulation Engine ===");
+        Logger::info("=== Commodity Market Simulation Engine ===");
         Logger::info("Config: {}", configPath);
-        Logger::info("Stocks: {}", stocksPath);
         Logger::info("API: {}:{}", host, port);
+        Logger::info("Data directory: {}", dataDir);
 
-        // Create simulation
         Simulation sim;
         g_sim = &sim;
 
-        // Load config and stocks, then initialize
         sim.loadConfig(configPath);
-        sim.loadStocks(stocksPath);
+        sim.loadCommodities(configPath);
         sim.initialize();
 
-        // Create API server
         ApiServer api(sim, host, port);
         g_api = &api;
 
-        // Start API server
         api.start();
 
-        // Populate historical data if requested
-        if (populate) {
+        if (populateByTicks) {
+            Logger::info("Populating {} ticks...", populateTicksCount);
+            sim.populateTicks(populateTicksCount);
+            Logger::info("Population complete. {} ticks generated.", sim.getCurrentTick());
+        }
+        else if (populate) {
             Logger::info("Populating {} days of historical data...", populateDays);
             sim.populate(populateDays);
             Logger::info("Population complete");
         }
 
-        // Auto-start simulation if requested
+        if (exportOnStart && (populate || populateByTicks)) {
+            Logger::info("Exporting tick data to {}...", dataDir);
+            
+            if (sim.getTickBuffer().exportToJson(dataDir + "/full_1m.json", 0)) {
+                Logger::info("Exported full dataset to {}/full_1m.json", dataDir);
+            }
+            if (sim.getTickBuffer().exportToJson(dataDir + "/dev_100k.json", 100000)) {
+                Logger::info("Exported dev dataset to {}/dev_100k.json", dataDir);
+            }
+            if (sim.getTickBuffer().exportToCsv(dataDir + "/csv", 0)) {
+                Logger::info("Exported CSV files to {}/csv/", dataDir);
+            }
+        }
+
         if (autoStart) {
             sim.start();
         }
@@ -113,7 +136,6 @@ int main(int argc, char* argv[]) {
         Logger::info("Ready. API available at http://{}:{}", host, port);
         Logger::info("Press Ctrl+C to exit");
 
-        // Wait for API server (blocks until server stops)
         while (api.isRunning()) {
             std::this_thread::sleep_for(std::chrono::seconds(1));
         }

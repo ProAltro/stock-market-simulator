@@ -35,8 +35,6 @@ namespace market {
         double loMin = rtConfig_ ? rtConfig_->momentum.limitOffsetMin : 0.0005;
         double loMax = rtConfig_ ? rtConfig_->momentum.limitOffsetMax : 0.005;
         double stRS = rtConfig_ ? rtConfig_->momentum.signalThresholdRiskScale : 0.001;
-        double isW = rtConfig_ ? rtConfig_->momentum.industrySentWeight : 0.1;
-        double gsW = rtConfig_ ? rtConfig_->momentum.globalSentWeight : 0.05;
 
         if (Random::uniform(0, 1) > params_.reactionSpeed * rMult * state.tickScale) {
             return std::nullopt;
@@ -64,13 +62,8 @@ namespace market {
 
         double signal = (shortMA - longMA) / longMA;
 
-        std::string industry;
-        auto indIt = state.symbolToIndustry.find(symbol);
-        if (indIt != state.symbolToIndustry.end()) industry = indIt->second;
-        double indSent = 0.0;
-        auto indSentIt = industrySentiment_.find(industry);
-        if (indSentIt != industrySentiment_.end()) indSent = indSentIt->second;
-        signal += indSent * isW + sentimentBias_ * gsW;
+        double commoditySentiment = getCombinedSentiment(symbol);
+        signal += commoditySentiment * 0.1 + sentimentBias_ * 0.05;
 
         double threshold = stRS * params_.riskAversion;
 
@@ -84,10 +77,10 @@ namespace market {
             }
         }
         else if (signal < -threshold) {
-            Volume position = getPosition(symbol);
-            if (position > 0) {
+            Volume maxSellable = getMaxSellable(symbol);
+            if (maxSellable > 0) {
                 double confidence = std::min(1.0, std::abs(signal) / 0.02);
-                Volume size = std::min(position, calculateOrderSize(currentPrice, confidence));
+                Volume size = std::min(maxSellable, calculateOrderSize(currentPrice, confidence));
 
                 if (size > 0) {
                     Price limitPrice = currentPrice * (1.0 - Random::uniform(loMin, loMax));

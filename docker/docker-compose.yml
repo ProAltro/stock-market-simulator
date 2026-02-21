@@ -4,135 +4,120 @@ services:
   postgres:
     image: postgres:15-alpine
     container_name: decrypt-postgres
-    restart: unless-stopped
     environment:
       POSTGRES_USER: decrypt
       POSTGRES_PASSWORD: decrypt123
       POSTGRES_DB: decrypt
-    ports:
-      - "5433:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U decrypt"]
       interval: 5s
       timeout: 5s
       retries: 5
 
-  redis:
-    image: redis:7-alpine
-    container_name: decrypt-redis
-    restart: unless-stopped
-    ports:
-      - "6379:6379"
-    volumes:
-      - redis_data:/data
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
-
-  backend:
+  decrypt:
     build:
-      context: ../backend
-      dockerfile: Dockerfile
-    container_name: decrypt-backend
-    restart: unless-stopped
-    environment:
-      NODE_ENV: development
-      PORT: 3000
-      DATABASE_URL: postgresql://decrypt:decrypt123@postgres:5432/decrypt?schema=public
-      REDIS_URL: redis://redis:6379
-      JWT_SECRET: ${JWT_SECRET:-change-me-in-production}
-      MARKET_DATA_PROVIDER: yahoo
-      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000,http://localhost:3001,http://localhost:8080}
-      JUDGE0_URL: http://judge0-server:2358
-      MARKET_SIM_URL: http://market-sim:8080
-    ports:
-      - "3000:3000"
+      context: ..
+      dockerfile: docker/Dockerfile.single
+    container_name: decrypt-app
     depends_on:
       postgres:
         condition: service_healthy
-      redis:
-        condition: service_healthy
-      market-sim:
-        condition: service_healthy
-
-  market-sim:
-    build:
-      context: ../market_sim
-      dockerfile: Dockerfile
-    container_name: decrypt-market-sim
-    restart: unless-stopped
     ports:
+      - "80:80"
       - "8080:8080"
-    healthcheck:
-      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8080/health"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
+    volumes:
+      - decrypt_data:/data
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=postgresql://decrypt:decrypt123@postgres:5432/decrypt?schema=public
+      - REDIS_URL=redis://localhost:6379
+      - JWT_SECRET=${JWT_SECRET:-change-me-in-production}
+      - MARKET_SIM_URL=http://localhost:8080
+      - DATA_DIR=/data
+      - FRONTEND_URL=http://localhost
 
-  # ============ JUDGE0 CODE EXECUTION ============
+  # Judge0 Code Execution Engine
   judge0-server:
     image: judge0/judge0:1.13.1
     container_name: judge0-server
-    restart: unless-stopped
+    volumes:
+      - ./judge0.conf:/judge0.conf:ro
     ports:
       - "2358:2358"
-    environment:
-      REDIS_HOST: judge0-redis
-      REDIS_PORT: 6379
-      POSTGRES_HOST: judge0-postgres
-      POSTGRES_PORT: 5432
-      POSTGRES_DB: judge0
-      POSTGRES_USER: judge0
-      POSTGRES_PASSWORD: judge0password
-      DISABLE_IP_CHECKING: "true"
-    depends_on:
-      - judge0-redis
-      - judge0-postgres
     privileged: true
+    env_file: judge0.conf
+    depends_on:
+      judge0-db:
+        condition: service_healthy
+      judge0-redis:
+        condition: service_healthy
+    restart: always
+    logging:
+      driver: json-file
+      options:
+        max-size: 100M
 
-  judge0-workers:
+  judge0-worker:
     image: judge0/judge0:1.13.1
-    container_name: judge0-workers
+    container_name: judge0-worker
     command: ["./scripts/workers"]
-    restart: unless-stopped
-    environment:
-      REDIS_HOST: judge0-redis
-      REDIS_PORT: 6379
-      POSTGRES_HOST: judge0-postgres
-      POSTGRES_PORT: 5432
-      POSTGRES_DB: judge0
-      POSTGRES_USER: judge0
-      POSTGRES_PASSWORD: judge0password
-    depends_on:
-      - judge0-redis
-      - judge0-postgres
+    volumes:
+      - ./judge0.conf:/judge0.conf:ro
     privileged: true
+    env_file: judge0.conf
+    depends_on:
+      judge0-db:
+        condition: service_healthy
+      judge0-redis:
+        condition: service_healthy
+    restart: always
+    logging:
+      driver: json-file
+      options:
+        max-size: 100M
+
+  judge0-db:
+    image: postgres:16.2
+    container_name: judge0-db
+    env_file: judge0.conf
+    volumes:
+      - judge0_postgres_data:/var/lib/postgresql/data/
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U judge0"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: always
+    logging:
+      driver: json-file
+      options:
+        max-size: 100M
 
   judge0-redis:
-    image: redis:7-alpine
+    image: redis:7.2.4
     container_name: judge0-redis
-    restart: unless-stopped
-    command: redis-server --appendonly yes
-    volumes:
-      - judge0_redis_data:/data
-
-  judge0-postgres:
-    image: postgres:15-alpine
-    container_name: judge0-postgres
-    restart: unless-stopped
-    environment:
-      POSTGRES_DB: judge0
-      POSTGRES_USER: judge0
-      POSTGRES_PASSWORD: judge0password
-    volumes:
-      - judge0_postgres_data:/var/lib/postgresql/data
+    command:
+      [
+        "bash",
+        "-c",
+        'docker-entrypoint.sh --appendonly no --requirepass "$$REDIS_PASSWORD"',
+      ]
+    env_file: judge0.conf
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "judge0redispassword", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: always
+    logging:
+      driver: json-file
+      options:
+        max-size: 100M
 
 volumes:
   postgres_data:
-  redis_data:
-  judge0_redis_data:
+  decrypt_data:
   judge0_postgres_data:

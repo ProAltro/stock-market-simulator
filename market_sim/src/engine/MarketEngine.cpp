@@ -8,62 +8,51 @@ namespace market {
 
     MarketEngine::MarketEngine() {}
 
-    void MarketEngine::addAsset(std::unique_ptr<Asset> asset) {
-        const std::string& symbol = asset->getSymbol();
-        const std::string& industry = asset->getIndustry();
+    void MarketEngine::addCommodity(std::unique_ptr<Commodity> commodity) {
+        const std::string& symbol = commodity->getSymbol();
 
-        // Track industry
-        industryToSymbols_[industry].push_back(symbol);
-
-        // Create order book
         orderBooks_[symbol] = std::make_unique<OrderBook>(symbol);
         orderBooks_[symbol]->setSimClock(&simClock_);
         if (rtConfig_) {
             orderBooks_[symbol]->setMaxOrderAgeMs(rtConfig_->orderBook.orderExpiryMs);
         }
 
-        // Register with candle aggregator
         candleAggregator_.addSymbol(symbol);
 
-        // Update news generator
-        std::map<std::string, std::string> symbolToIndustry;
-        std::map<std::string, std::string> symbolToName;
-        std::map<std::string, double> symbolToMarketCap;
-        std::map<std::string, std::string> symbolToSector;
-        for (const auto& [sym, assetPtr] : assets_) {
-            symbolToIndustry[sym] = assetPtr->getIndustry();
-            symbolToName[sym] = assetPtr->getName();
-            symbolToMarketCap[sym] = assetPtr->getMarketCap();
-            symbolToSector[sym] = assetPtr->getSectorDetail();
+        newsGenerator_.setCommodities([&]() {
+            std::vector<std::string> syms;
+            for (const auto& [s, _] : commodities_) {
+                syms.push_back(s);
+            }
+            syms.push_back(symbol);
+            return syms;
+        }());
+
+        std::map<std::string, std::string> names;
+        for (const auto& [s, c] : commodities_) {
+            names[s] = c->getName();
         }
-        symbolToIndustry[symbol] = industry;
-        symbolToName[symbol] = asset->getName();
-        symbolToMarketCap[symbol] = asset->getMarketCap();
-        symbolToSector[symbol] = asset->getSectorDetail();
+        names[symbol] = commodity->getName();
+        newsGenerator_.setCommodityNames(names);
 
-        newsGenerator_.setSymbols(symbolToIndustry);
-        newsGenerator_.setSymbolNames(symbolToName);
-        newsGenerator_.setSymbolMarketCaps(symbolToMarketCap);
-        newsGenerator_.setSymbolSectorDetails(symbolToSector);
-
-        std::vector<std::string> industries;
-        for (const auto& [ind, _] : industryToSymbols_) {
-            industries.push_back(ind);
+        std::map<std::string, std::string> categories;
+        for (const auto& [s, c] : commodities_) {
+            categories[s] = c->getCategory();
         }
-        newsGenerator_.setIndustries(industries);
+        categories[symbol] = commodity->getCategory();
+        newsGenerator_.setCommodityCategories(categories);
 
-        assets_[symbol] = std::move(asset);
+        commodities_[symbol] = std::move(commodity);
 
-        Logger::info("Added asset {} ({})", symbol, industry);
+        Logger::info("Added commodity {} ({})", symbol, categories[symbol]);
     }
 
-    Asset* MarketEngine::getAsset(const std::string& symbol) {
-        auto it = assets_.find(symbol);
-        return it != assets_.end() ? it->second.get() : nullptr;
+    Commodity* MarketEngine::getCommodity(const std::string& symbol) {
+        auto it = commodities_.find(symbol);
+        return it != commodities_.end() ? it->second.get() : nullptr;
     }
 
     void MarketEngine::addAgent(std::unique_ptr<Agent> agent) {
-        Logger::debug("Added agent {} ({})", agent->getId(), agent->getType());
         agentIdToType_[agent->getId()] = agent->getType();
         agents_.push_back(std::move(agent));
     }
@@ -81,182 +70,83 @@ namespace market {
         return it != orderBooks_.end() ? it->second.get() : nullptr;
     }
 
+    void MarketEngine::setCrossEffects(const std::string& symbol, const std::vector<CrossEffect>& effects) {
+        crossEffects_[symbol] = effects;
+    }
+
     void MarketEngine::tick() {
         totalTicks_++;
 
-        // 0. Advance simulated clock
         simClock_.tick();
         Timestamp simTime = simClock_.currentTimestamp();
 
-        // 0a. Handle new day: reset circuit breakers, mark day open prices, reset daily volume
         if (simClock_.isNewDay()) {
-            for (auto& [symbol, asset] : assets_) {
-                asset->resetCircuitBreaker();
-                asset->markDayOpen();
-                asset->resetDailyVolume();
+            for (auto& [symbol, commodity] : commodities_) {
+                commodity->resetCircuitBreaker();
+                commodity->markDayOpen();
+                commodity->resetDailyVolume();
             }
         }
 
-        // 1. Generate and process news
         double tickScale = simClock_.getTickScale();
         auto news = newsGenerator_.generate(simTime, tickScale);
         processNews(news);
 
-        // 2. Decay agent sentiments (once per tick, not per news event)
         for (auto& agent : agents_) {
             agent->decaySentiment(tickScale);
         }
 
-        // 3. Update macro environment
-        macroEnv_.update(tickScale);
+        decaySentiment(tickScale);
 
-        // 4. Update fundamental values
-        updateFundamentals(tickScale);
+        updateSupplyDemand(tickScale);
 
-        // 5. Collect and process agent orders
         processAgentOrders();
 
-        // 6. Match orders (skip for circuit-broken symbols)
         matchAllOrders();
 
-        // 7. Feed latest prices to candle aggregator
-        for (const auto& [symbol, asset] : assets_) {
-            double vol = asset->getDailyVolume();  // incremental since last
-            candleAggregator_.onTick(symbol, asset->getPrice(), vol, simTime);
+        for (const auto& [symbol, commodity] : commodities_) {
+            double vol = commodity->getDailyVolume();
+            candleAggregator_.onTick(symbol, commodity->getPrice(), vol, simTime);
         }
 
-        // Log periodic status
-        if (totalTicks_ % 100 == 0) {
-            Logger::info("Tick {} ({}): {} trades, {} agents active",
-                totalTicks_, simClock_.currentDateString(), totalTrades_, agents_.size());
-
-            for (const auto& [symbol, asset] : assets_) {
-                Logger::debug("  {}: price={:.2f}, fundamental={:.2f}, volume={}",
-                    symbol, asset->getPrice(), asset->getFundamentalValue(),
-                    asset->getDailyVolume());
-            }
+        if (totalTicks_ % 1000 == 0) {
+            Logger::info("Tick {} ({}): {} trades, {} orders",
+                totalTicks_, simClock_.currentDateString(), totalTrades_, totalOrders_);
         }
-    }
-
-    MarketState MarketEngine::getMarketState() const {
-        MarketState state;
-        state.currentTime = simClock_.currentTimestamp();
-        state.globalSentiment = macroEnv_.getGlobalSentiment();
-        state.interestRate = macroEnv_.getInterestRate();
-        state.tickScale = simClock_.getTickScale();
-        state.recentNews = recentNews_;
-
-        for (const auto& [symbol, asset] : assets_) {
-            state.prices[symbol] = asset->getPrice();
-            state.fundamentals[symbol] = asset->getFundamentalValue();
-            state.volumes[symbol] = asset->getDailyVolume();
-            state.priceHistory[symbol] = asset->getPriceHistory();
-            state.symbolToIndustry[symbol] = asset->getIndustry();
-        }
-
-        return state;
-    }
-
-    std::map<std::string, OrderBookSnapshot> MarketEngine::getOrderBookSnapshots(int depth) const {
-        std::map<std::string, OrderBookSnapshot> snapshots;
-        for (const auto& [symbol, book] : orderBooks_) {
-            snapshots[symbol] = book->getSnapshot(depth);
-        }
-        return snapshots;
-    }
-
-    SimulationMetrics MarketEngine::getMetrics() const {
-        SimulationMetrics metrics;
-        metrics.totalTicks = totalTicks_;
-        metrics.totalTrades = totalTrades_;
-        metrics.totalOrders = totalOrders_;
-
-        // Calculate average spread
-        double sumSpread = 0;
-        int count = 0;
-        for (const auto& [symbol, book] : orderBooks_) {
-            double spread = book->getSpread();
-            if (spread > 0) {
-                sumSpread += spread;
-                count++;
-            }
-        }
-        metrics.avgSpread = count > 0 ? sumSpread / count : 0;
-
-        // Calculate returns
-        for (const auto& [symbol, asset] : assets_) {
-            metrics.returns[symbol] = asset->getReturn(1);
-        }
-
-        // Include per-agent-type stats
-        metrics.agentTypeStats = agentTypeStats_;
-
-        return metrics;
-    }
-
-    void MarketEngine::reset() {
-        totalTicks_ = 0;
-        totalTrades_ = 0;
-        totalOrders_ = 0;
-        recentNews_.clear();
-        industryShocks_.clear();
-        companyShocks_.clear();
-
-        // Clear diagnostics
-        recentTrades_.clear();
-        agentTypeStats_.clear();
-        agentIdToType_.clear();
-
-        // Clear ALL state so reinitialize() starts fresh
-        agents_.clear();
-        assets_.clear();
-        orderBooks_.clear();
-        industryToSymbols_.clear();
-        candleAggregator_ = CandleAggregator();
-
-        Logger::info("Market engine reset (agents, assets, order books, diagnostics cleared)");
     }
 
     void MarketEngine::processNews(const std::vector<NewsEvent>& news) {
         for (const auto& event : news) {
-            // Add to recent news
             recentNews_.push_back(event);
             if (recentNews_.size() > MAX_RECENT_NEWS) {
                 recentNews_.erase(recentNews_.begin());
             }
 
-            // Log news
-            std::string sentiment = event.sentiment == NewsSentiment::POSITIVE ? "+" :
-                event.sentiment == NewsSentiment::NEGATIVE ? "-" : "~";
-            std::string catName;
-            switch (event.category) {
-            case NewsCategory::GLOBAL: catName = "GLOBAL"; break;
-            case NewsCategory::POLITICAL: catName = "POLITICAL"; break;
-            case NewsCategory::INDUSTRY: catName = event.industry; break;
-            case NewsCategory::COMPANY: catName = event.symbol; break;
+            Logger::debug("[NEWS] {}: {} (mag: {:.3f})",
+                event.category == NewsCategory::SUPPLY ? "SUPPLY" :
+                event.category == NewsCategory::DEMAND ? "DEMAND" :
+                event.category == NewsCategory::GLOBAL ? "GLOBAL" : "POLITICAL",
+                event.headline, event.magnitude);
+
+            double sign = (event.sentiment == NewsSentiment::POSITIVE) ? 1.0 :
+                          (event.sentiment == NewsSentiment::NEGATIVE) ? -1.0 : 0.0;
+
+            if (event.category == NewsCategory::GLOBAL || event.category == NewsCategory::POLITICAL) {
+                globalSentiment_ += sign * event.magnitude * 0.3;
             }
-            Logger::info("[NEWS] {} {}: {} (mag: {:.3f})",
-                sentiment, catName, event.headline, event.magnitude);
-
-            // Apply to macro environment (handles GLOBAL + POLITICAL)
-            macroEnv_.applyNews(event);
-
-            // Track industry shocks
-            if (event.category == NewsCategory::INDUSTRY) {
-                double impact = event.magnitude;
-                if (event.sentiment == NewsSentiment::NEGATIVE) impact = -impact;
-                industryShocks_[event.industry] += impact;
+            else if (event.category == NewsCategory::SUPPLY) {
+                auto* commodity = getCommodity(event.symbol);
+                if (commodity) {
+                    commodity->applySupplyShock(-sign * event.magnitude);
+                }
             }
-
-            // Track company shocks → feeds into fundamentals
-            if (event.category == NewsCategory::COMPANY && !event.symbol.empty()) {
-                double impact = event.magnitude;
-                if (event.sentiment == NewsSentiment::NEGATIVE) impact = -impact;
-                else if (event.sentiment == NewsSentiment::NEUTRAL) impact *= 0.1;
-                companyShocks_[event.symbol] += impact;
+            else if (event.category == NewsCategory::DEMAND) {
+                auto* commodity = getCommodity(event.symbol);
+                if (commodity) {
+                    commodity->applyDemandShock(sign * event.magnitude);
+                }
             }
 
-            // Notify agents
             for (auto& agent : agents_) {
                 agent->updateBeliefs(event);
             }
@@ -265,51 +155,40 @@ namespace market {
                 newsCallback_(event);
             }
 
-            // Feed to NewsGenerator's recent buffer for SSE streaming
             newsGenerator_.addToRecent(event);
         }
     }
 
-    void MarketEngine::updateFundamentals(double tickScale) {
-        double globalShock = macroEnv_.getGlobalShock(tickScale);
+    void MarketEngine::updateSupplyDemand(double tickScale) {
+        for (auto& [symbol, commodity] : commodities_) {
+            commodity->updateSupplyDemand(tickScale);
+        }
+    }
 
-        // Read all params from RuntimeConfig (falls back to defaults if null)
-        double annualGrowth = rtConfig_ ? rtConfig_->engine.annualGrowthRate : 0.08;
-        double companyShockStd = rtConfig_ ? rtConfig_->engine.companyShockStd : 0.0002;
-        double newsScale = rtConfig_ ? rtConfig_->engine.newsToFundamentalScale : 0.005;
-        double indShockScale = rtConfig_ ? rtConfig_->engine.industryShockScale : 0.005;
-        double indShockDecay = rtConfig_ ? rtConfig_->engine.industryShockDecay : 0.95;
-        double compShockDecay = rtConfig_ ? rtConfig_->engine.companyShockDecay : 0.90;
+    void MarketEngine::decaySentiment(double tickScale) {
+        globalSentiment_ *= std::pow(0.95, tickScale);
+    }
 
-        int tpd = simClock_.getTicksPerDay();
-        double dailyGrowthPerTick = (annualGrowth / 252.0) / static_cast<double>(tpd);
-        double sqrtTS = std::sqrt(tickScale);
+    MarketState MarketEngine::getMarketState() const {
+        MarketState state;
+        state.currentTime = simClock_.currentTimestamp();
+        state.globalSentiment = globalSentiment_;
+        state.tickScale = simClock_.getTickScale();
+        state.recentNews = recentNews_;
 
-        for (auto& [symbol, asset] : assets_) {
-            // Industry shock: SCALE the accumulated value (fixes 10^30 blow-up)
-            double industryShock = 0;
-            auto it = industryShocks_.find(asset->getIndustry());
-            if (it != industryShocks_.end()) {
-                industryShock = it->second * indShockScale;
-            }
-
-            // Company-specific shock: news-driven + small random (noise scaled)
-            double companyShock = Random::normal(0, companyShockStd * sqrtTS);
-            auto cit = companyShocks_.find(symbol);
-            if (cit != companyShocks_.end()) {
-                companyShock += cit->second * newsScale;
-            }
-
-            asset->updateFundamental(globalShock, industryShock, companyShock, dailyGrowthPerTick);
+        for (const auto& [symbol, commodity] : commodities_) {
+            state.prices[symbol] = commodity->getPrice();
+            state.supplyDemand[symbol] = commodity->getSupplyDemand();
+            state.priceHistory[symbol] = commodity->getPriceHistory();
+            state.volumes[symbol] = commodity->getDailyVolume();
+            state.symbolToCategory[symbol] = commodity->getCategory();
         }
 
-        // Decay shocks — use pow(decay, tickScale) so half-life stays constant in days
-        for (auto& [industry, shock] : industryShocks_) {
-            shock *= std::pow(indShockDecay, tickScale);
+        for (const auto& [symbol, effects] : crossEffects_) {
+            state.crossEffects[symbol] = effects;
         }
-        for (auto& [symbol, shock] : companyShocks_) {
-            shock *= std::pow(compShockDecay, tickScale);
-        }
+
+        return state;
     }
 
     void MarketEngine::processAgentOrders() {
@@ -326,19 +205,12 @@ namespace market {
                     book->addOrder(order);
                     totalOrders_++;
 
-                    // Track per-type stats
                     auto& stats = agentTypeStats_[agent->getType()];
                     stats.ordersPlaced++;
                     if (order.side == OrderSide::BUY)
                         stats.buyOrders++;
                     else
                         stats.sellOrders++;
-
-                    Logger::trace("Agent {} ({}) placed {} {} {} @ {:.2f} x {}",
-                        agent->getId(), agent->getType(),
-                        order.side == OrderSide::BUY ? "BUY" : "SELL",
-                        order.type == OrderType::LIMIT ? "LIMIT" : "MARKET",
-                        order.symbol, order.price, order.quantity);
                 }
             }
         }
@@ -351,19 +223,16 @@ namespace market {
             auto trades = book->matchOrders();
 
             for (auto& trade : trades) {
-                // Tag buyer/seller types from lookup
                 auto bit = agentIdToType_.find(trade.buyerId);
                 trade.buyerType = (bit != agentIdToType_.end()) ? bit->second : "User";
                 auto sit = agentIdToType_.find(trade.sellerId);
                 trade.sellerType = (sit != agentIdToType_.end()) ? sit->second : "User";
 
-                // Push to trade log ring buffer
                 recentTrades_.push_back(trade);
                 if (recentTrades_.size() > MAX_RECENT_TRADES) {
                     recentTrades_.pop_front();
                 }
 
-                // Update per-type fill stats
                 agentTypeStats_[trade.buyerType].fills++;
                 agentTypeStats_[trade.buyerType].volumeTraded += trade.quantity;
                 agentTypeStats_[trade.buyerType].cashSpent += trade.price * trade.quantity;
@@ -373,10 +242,6 @@ namespace market {
 
                 allTrades.push_back(trade);
                 totalTrades_++;
-
-                Logger::debug("TRADE {}: {:.2f} x {} ({} -> {})",
-                    trade.symbol, trade.price, trade.quantity,
-                    trade.buyerType, trade.sellerType);
 
                 if (tradeCallback_) {
                     tradeCallback_(trade);
@@ -390,11 +255,10 @@ namespace market {
 
     void MarketEngine::updatePrices(const std::vector<Trade>& trades) {
         for (const auto& trade : trades) {
-            auto* asset = getAsset(trade.symbol);
-            if (asset) {
-                // Use dampened price impact instead of direct set
-                asset->applyTradePrice(trade.price, trade.quantity);
-                asset->addVolume(trade.quantity);
+            auto* commodity = getCommodity(trade.symbol);
+            if (commodity) {
+                commodity->applyTradePrice(trade.price, trade.quantity);
+                commodity->addVolume(trade.quantity);
             }
         }
     }
@@ -407,6 +271,60 @@ namespace market {
                 }
             }
         }
+    }
+
+    std::map<std::string, OrderBookSnapshot> MarketEngine::getOrderBookSnapshots(int depth) const {
+        std::map<std::string, OrderBookSnapshot> snapshots;
+        for (const auto& [symbol, book] : orderBooks_) {
+            snapshots[symbol] = book->getSnapshot(depth);
+        }
+        return snapshots;
+    }
+
+    SimulationMetrics MarketEngine::getMetrics() const {
+        SimulationMetrics metrics;
+        metrics.totalTicks = totalTicks_;
+        metrics.totalTrades = totalTrades_;
+        metrics.totalOrders = totalOrders_;
+
+        double sumSpread = 0;
+        int count = 0;
+        for (const auto& [symbol, book] : orderBooks_) {
+            double spread = book->getSpread();
+            if (spread > 0) {
+                sumSpread += spread;
+                count++;
+            }
+        }
+        metrics.avgSpread = count > 0 ? sumSpread / count : 0;
+
+        for (const auto& [symbol, commodity] : commodities_) {
+            metrics.returns[symbol] = commodity->getReturn(1);
+        }
+
+        metrics.agentTypeStats = agentTypeStats_;
+
+        return metrics;
+    }
+
+    void MarketEngine::reset() {
+        totalTicks_ = 0;
+        totalTrades_ = 0;
+        totalOrders_ = 0;
+        recentNews_.clear();
+        globalSentiment_ = 0.0;
+
+        recentTrades_.clear();
+        agentTypeStats_.clear();
+        agentIdToType_.clear();
+
+        agents_.clear();
+        commodities_.clear();
+        orderBooks_.clear();
+        crossEffects_.clear();
+        candleAggregator_ = CandleAggregator();
+
+        Logger::info("Market engine reset");
     }
 
 } // namespace market

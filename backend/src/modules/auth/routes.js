@@ -1,7 +1,6 @@
 import bcrypt from "bcrypt";
 
 export async function register(fastify, opts) {
-  // Register new user
   fastify.post(
     "/register",
     {
@@ -20,7 +19,6 @@ export async function register(fastify, opts) {
     async (request, reply) => {
       const { email, password, displayName } = request.body;
 
-      // Check if user exists
       const existingUser = await fastify.prisma.user.findUnique({
         where: { email },
       });
@@ -29,29 +27,16 @@ export async function register(fastify, opts) {
         return reply.code(409).send({ error: "Email already registered" });
       }
 
-      // Hash password
       const passwordHash = await bcrypt.hash(password, 12);
 
-      // Create user with default trading account
       const user = await fastify.prisma.user.create({
         data: {
           email,
           passwordHash,
-          activeMode: "STANDARD",
-          accounts: {
-            create: {
-              name: "Standard Account",
-              mode: "STANDARD",
-              cashBalance: process.env.DEFAULT_STARTING_BALANCE || 100000,
-            },
-          },
-        },
-        include: {
-          accounts: true,
+          displayName: displayName || email.split("@")[0],
         },
       });
 
-      // Generate token
       const token = fastify.jwt.sign({
         userId: user.id,
         email: user.email,
@@ -61,15 +46,14 @@ export async function register(fastify, opts) {
         user: {
           id: user.id,
           email: user.email,
+          displayName: user.displayName,
           createdAt: user.createdAt,
         },
-        account: user.accounts[0],
         token,
       };
-    },
+    }
   );
 
-  // Login
   fastify.post(
     "/login",
     {
@@ -89,7 +73,6 @@ export async function register(fastify, opts) {
 
       const user = await fastify.prisma.user.findUnique({
         where: { email },
-        include: { accounts: true },
       });
 
       if (!user) {
@@ -110,15 +93,14 @@ export async function register(fastify, opts) {
         user: {
           id: user.id,
           email: user.email,
+          displayName: user.displayName,
           createdAt: user.createdAt,
         },
-        account: user.accounts[0],
         token,
       };
-    },
+    }
   );
 
-  // Get current user
   fastify.get(
     "/me",
     {
@@ -127,14 +109,11 @@ export async function register(fastify, opts) {
     async (request, reply) => {
       const user = await fastify.prisma.user.findUnique({
         where: { id: request.user.userId },
-        include: {
-          accounts: {
-            include: {
-              positions: {
-                include: { instrument: true },
-              },
-            },
-          },
+        select: {
+          id: true,
+          email: true,
+          displayName: true,
+          createdAt: true,
         },
       });
 
@@ -142,13 +121,39 @@ export async function register(fastify, opts) {
         return reply.code(404).send({ error: "User not found" });
       }
 
-      return {
-        id: user.id,
-        email: user.email,
-        createdAt: user.createdAt,
-        accounts: user.accounts,
-      };
+      return user;
+    }
+  );
+
+  fastify.patch(
+    "/me",
+    {
+      preHandler: [fastify.authenticate],
+      schema: {
+        body: {
+          type: "object",
+          properties: {
+            displayName: { type: "string", minLength: 1, maxLength: 50 },
+          },
+        },
+      },
     },
+    async (request, reply) => {
+      const { displayName } = request.body;
+
+      const user = await fastify.prisma.user.update({
+        where: { id: request.user.userId },
+        data: { displayName },
+        select: {
+          id: true,
+          email: true,
+          displayName: true,
+          createdAt: true,
+        },
+      });
+
+      return user;
+    }
   );
 }
 

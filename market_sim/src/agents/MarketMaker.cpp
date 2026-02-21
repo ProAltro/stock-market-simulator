@@ -32,7 +32,6 @@ namespace market {
     }
 
     std::optional<Order> MarketMaker::decide(const MarketState& state) {
-        // Scale activity by tickScale so per-day order count stays constant
         if (state.tickScale < 1.0 && Random::uniform(0.0, 1.0) > state.tickScale) {
             return std::nullopt;
         }
@@ -51,7 +50,6 @@ namespace market {
         for (const auto& [symbol, price] : state.prices) {
             if (price <= 0) continue;
 
-            // Estimate volatility from recent history
             double volatility = 0.02;
             auto histIt = state.priceHistory.find(symbol);
             if (histIt != state.priceHistory.end() && histIt->second.size() > 20) {
@@ -71,19 +69,23 @@ namespace market {
 
             double skew = calculateSkew(symbol);
 
-            // Informed market-making: blend mid-price toward fundamental value
-            // This transmits fundamental volatility to market prices
-            double fundWeight = rtConfig_ ? rtConfig_->marketMaker.fundamentalWeight : 0.05;
+            // midPrice = current price; supply-demand signal only widens spread
+            // (informed traders like SupplyDemandTrader move price through their
+            // directional orders, not through MM quote-shifting).
             double midPrice = price;
-            auto fundIt = state.fundamentals.find(symbol);
-            if (fundIt != state.fundamentals.end() && fundIt->second > 0) {
-                midPrice = price * (1.0 - fundWeight) + fundIt->second * fundWeight;
+
+            auto sdIt = state.supplyDemand.find(symbol);
+            if (sdIt != state.supplyDemand.end()) {
+                double imbalance = sdIt->second.getImbalance();
+                // Widen spread when supply/demand is unbalanced (more uncertainty)
+                spread *= (1.0 + std::abs(imbalance) * 2.0);
             }
+
             double halfSpread = spread * midPrice / 2.0;
 
-            // Clamp skew so ask >= mid and bid <= mid (prevents all-trades-below-mid death spiral)
             double skewShift = skew * midPrice;
-            skewShift = std::clamp(skewShift, -halfSpread, halfSpread);
+            // Cap skew to 25% of halfSpread so neither side collapses
+            skewShift = std::clamp(skewShift, -halfSpread * 0.25, halfSpread * 0.25);
 
             double bidPrice = midPrice - halfSpread - skewShift;
             double askPrice = midPrice + halfSpread - skewShift;
@@ -96,12 +98,10 @@ namespace market {
             Volume baseSize = static_cast<Volume>(cash_ * qCapFrac / price);
             baseSize = std::max(Volume(1), baseSize);
 
-            // Bid (if not at max long inventory)
             if (inventory < maxInventory_ && canBuy(symbol, baseSize, bidPrice)) {
                 orders.push_back(createOrder(symbol, OrderSide::BUY, OrderType::LIMIT, bidPrice, baseSize));
             }
 
-            // Ask (can go short up to -maxInventory_ — symmetric liquidity provision)
             if (inventory > -maxInventory_) {
                 Volume askSize = baseSize;
                 orders.push_back(createOrder(symbol, OrderSide::SELL, OrderType::LIMIT, askPrice, askSize));

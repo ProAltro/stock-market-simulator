@@ -59,6 +59,13 @@ public:
         std::bernoulli_distribution dist(p);
         return dist(engine());
     }
+
+    // Pareto distribution (heavy-tailed) with shape alpha and scale xmin
+    // P(X > x) = (xmin/x)^alpha  =>  inverse CDF: xmin / U^(1/alpha)
+    static double pareto(double alpha, double xmin = 1.0) {
+        double u = uniform(0.0001, 1.0); // avoid division by zero
+        return xmin / std::pow(u, 1.0 / alpha);
+    }
 };
 
 } // namespace market

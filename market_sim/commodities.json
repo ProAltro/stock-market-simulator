@@ -1,0 +1,107 @@
+{
+  "commodities": [
+    {
+      "symbol": "OIL",
+      "name": "Crude Oil",
+      "category": "Energy",
+      "initialPrice": 75.0,
+      "baseProduction": 100.0,
+      "baseConsumption": 100.0,
+      "volatility": 0.03,
+      "initialInventory": 50.0,
+      "crossEffects": {
+        "STEEL": 0.25,
+        "BRICK": 0.15,
+        "WOOD": 0.10
+      }
+    },
+    {
+      "symbol": "STEEL",
+      "name": "Steel",
+      "category": "Construction",
+      "initialPrice": 120.0,
+      "baseProduction": 80.0,
+      "baseConsumption": 80.0,
+      "volatility": 0.025,
+      "initialInventory": 40.0,
+      "crossEffects": {
+        "OIL": 0.30,
+        "BRICK": 0.35,
+        "WOOD": 0.20
+      }
+    },
+    {
+      "symbol": "WOOD",
+      "name": "Lumber",
+      "category": "Construction",
+      "initialPrice": 45.0,
+      "baseProduction": 120.0,
+      "baseConsumption": 120.0,
+      "volatility": 0.035,
+      "initialInventory": 60.0,
+      "crossEffects": {
+        "BRICK": 0.30,
+        "STEEL": 0.15
+      }
+    },
+    {
+      "symbol": "BRICK",
+      "name": "Brick",
+      "category": "Construction",
+      "initialPrice": 25.0,
+      "baseProduction": 150.0,
+      "baseConsumption": 150.0,
+      "volatility": 0.02,
+      "initialInventory": 75.0,
+      "crossEffects": {
+        "STEEL": 0.40,
+        "WOOD": 0.35
+      }
+    },
+    {
+      "symbol": "GRAIN",
+      "name": "Grain",
+      "category": "Agriculture",
+      "initialPrice": 8.0,
+      "baseProduction": 200.0,
+      "baseConsumption": 200.0,
+      "volatility": 0.04,
+      "initialInventory": 100.0,
+      "crossEffects": {}
+    }
+  ],
+  "simulation": {
+    "startDate": "2025-01-01",
+    "tickRateMs": 50,
+    "ticksPerDay": 72000,
+    "populateTicksPerDay": 576,
+    "populateFineTicksPerDay": 1440,
+    "populateFineDays": 7
+  },
+  "agents": {
+    "supplyDemand": 15,
+    "momentum": 10,
+    "meanReversion": 10,
+    "noise": 8,
+    "marketMaker": 5,
+    "crossEffects": 8,
+    "inventory": 6,
+    "event": 6
+  },
+  "agentCash": {
+    "meanCash": 100000,
+    "stdCash": 30000
+  },
+  "news": {
+    "lambda": 0.05,
+    "globalImpactStd": 0.015,
+    "politicalImpactStd": 0.02,
+    "supplyImpactStd": 0.04,
+    "demandImpactStd": 0.04
+  },
+  "logging": {
+    "file": "commodity_sim.log",
+    "level": "info",
+    "console": true
+  }
+}
