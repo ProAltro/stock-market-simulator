@@ -7,7 +7,17 @@
     </p>
   </header>
 
-  <div class="compete-layout">
+  <!-- Auth gate for non-logged-in users -->
+  <div x-show="!user" class="compete-auth-gate">
+    <div class="compete-auth-card">
+      <div class="compete-auth-icon">⚡</div>
+      <h2>Login to Compete</h2>
+      <p>Sign in to submit your trading algorithm and compete on the leaderboard.</p>
+      <button @click="showAuthModal = true" class="btn btn-primary">Sign In</button>
+    </div>
+  </div>
+
+  <div x-show="user">
     <div class="editor-section">
       <div class="editor-header">
         <div class="lang-tabs">
@@ -23,15 +33,11 @@
           >
             C++
           </button>
-        </div>
-        <div class="editor-actions">
-          <button @click="downloadData()" class="btn btn-small btn-secondary">
+          <div class="lang-tabs-spacer"></div>
+          <button @click="downloadData()" class="lang-tab-action">
             Download Data (100K)
           </button>
-          <button
-            @click="navigateTo('api')"
-            class="btn btn-small btn-secondary"
-          >
+          <button @click="navigateTo('api')" class="lang-tab-action">
             API Docs
           </button>
         </div>
@@ -159,4 +165,5 @@
       </tbody>
     </table>
   </div>
+  </div><!-- end x-show="user" -->
 </div>

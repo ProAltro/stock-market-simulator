@@ -18,6 +18,7 @@ Decrypt provides:
 |---------|-------------|
 | [Quick Start](getting-started/quickstart.md) | Get running in 5 minutes |
 | [Architecture](architecture/overview.md) | System design and components |
+| [Market Simulation](market/overview.md) | How the market engine works |
 | [API Reference](api/auth.md) | REST API documentation |
 | [Algorithm Guide](algorithms/guide.md) | Write your first trading strategy |
 | [Deployment](deployment/docker.md) | Docker deployment guide |

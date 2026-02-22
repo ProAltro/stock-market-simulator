@@ -101,12 +101,13 @@ def run():
     rebalance_interval = 10000  # rebalance every 10k ticks
 
     for tick in range(get_tick_count()):
-        if tick % rebalance_interval == 0 and tick > 0:
-            # Sell everything
-            for sym in symbols:
-                pos = get_position(sym)
-                if pos > 0:
-                    sell(sym, pos)
+        if tick == 0 or (tick % rebalance_interval == 0 and tick > 0):
+            # Sell everything first (except on first tick)
+            if tick > 0:
+                for sym in symbols:
+                    pos = get_position(sym)
+                    if pos > 0:
+                        sell(sym, pos)
 
             # Buy equal weight
             cash_per = get_cash() / len(symbols)
@@ -115,15 +116,6 @@ def run():
                 qty = int(cash_per / price)
                 if qty > 0:
                     buy(sym, qty)
-
-    # Initial buy
-    if tick == 0:
-        cash_per = get_cash() / len(symbols)
-        for sym in symbols:
-            price = get_price(sym, tick)
-            qty = int(cash_per / price)
-            if qty > 0:
-                buy(sym, qty)
 
 run()
 ```

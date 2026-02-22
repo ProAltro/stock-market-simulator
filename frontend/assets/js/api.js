@@ -1,5 +1,9 @@
-export const API_URL = window.location.origin + "/api";
+let baseUrl = window.location.origin;
+if (baseUrl.includes("file://") || window.location.port === "5500" || window.location.port === "3000") {
+  baseUrl = "http://localhost";
+}
 
+export const API_URL = baseUrl + "/api";
 export async function fetchWithAuth(url, options = {}) {
   const token = localStorage.getItem("decrypt_token");
   const headers = {

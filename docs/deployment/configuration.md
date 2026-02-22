@@ -35,10 +35,12 @@ Runtime configuration via the `/config` API endpoint or `tune_sim.js`:
 
 | Setting | Default | Description |
 |---------|---------|-------------|
-| `ticksPerDay` | 1440 | Ticks per simulated day |
-| `agentCount` | 68 | Total trading agents |
+| `ticksPerDay` | 72,000 | Ticks per simulated day (live mode) |
+| `populateTicksPerDay` | 576 | Ticks per day during coarse populate |
 | `circuitBreakerThreshold` | 0.10 | Max daily price move (10%) |
-| `populateTicks` | 1000000 | Ticks to generate on startup |
+| `populate` | 100 days | Historical data generated on startup |
+
+Wait ~1-2 minutes for market sim population on first start (configurable via `--populate` days in `supervisord.conf`).
 
 ## Judge0 Configuration
 

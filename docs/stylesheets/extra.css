@@ -1,0 +1,79 @@
+/* Decrypt documentation custom styles */
+
+/* Overall typography */
+:root {
+    --md-primary-fg-color: #7c4dff;
+    --md-primary-fg-color--light: #b47cff;
+    --md-primary-fg-color--dark: #651fff;
+    --md-accent-fg-color: #ffab00;
+}
+
+/* Better code block styling */
+.md-typeset code {
+    border-radius: 4px;
+}
+
+.md-typeset pre>code {
+    border-radius: 8px;
+}
+
+/* Mermaid diagrams — add some breathing room */
+.md-typeset .mermaid {
+    margin: 1.5em 0;
+    text-align: center;
+}
+
+/* Tables — alternating row colors for readability */
+.md-typeset table:not([class]) tbody tr:nth-child(even) {
+    background-color: rgba(124, 77, 255, 0.04);
+}
+
+[data-md-color-scheme="slate"] .md-typeset table:not([class]) tbody tr:nth-child(even) {
+    background-color: rgba(124, 77, 255, 0.08);
+}
+
+/* Admonition titles */
+.md-typeset .admonition {
+    border-radius: 8px;
+}
+
+/* Navigation tabs refinement */
+.md-tabs__link {
+    font-weight: 500;
+    letter-spacing: 0.02em;
+}
+
+/* Header bar slightly transparent */
+.md-header {
+    backdrop-filter: blur(8px);
+}
+
+[data-md-color-scheme="slate"] .md-header {
+    background-color: rgba(30, 30, 46, 0.9);
+}
+
+/* Content area max-width for readability */
+.md-content {
+    max-width: 960px;
+}
+
+/* Sidebar links — subtle hover effect */
+.md-nav__link:hover {
+    color: var(--md-accent-fg-color);
+}
+
+/* Footer cleanup */
+.md-footer-meta {
+    background-color: var(--md-default-bg-color);
+}
+
+/* Smooth scrolling */
+html {
+    scroll-behavior: smooth;
+}
+
+/* Better horizontal rule styling */
+.md-typeset hr {
+    border-color: rgba(124, 77, 255, 0.15);
+    margin: 2em 0;
+}

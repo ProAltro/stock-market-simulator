@@ -6,34 +6,20 @@ Decrypt is a multi-service platform orchestrated via Docker Compose with nginx a
 
 ```mermaid
 graph TD
-    subgraph Docker Host
-        nginx[nginx :80]
-        subgraph "decrypt-app container"
-            FE[Frontend Static Files]
-            BE[Node.js Backend :3000]
-            MS[C++ Market Sim :8080]
-            Redis[(Redis)]
-        end
-        PG[(PostgreSQL)]
-        J0S[Judge0 Server :2358]
-        J0W[Judge0 Worker]
-        J0DB[(Judge0 PostgreSQL)]
-        J0R[(Judge0 Redis)]
-    end
+    Browser --> nginx["nginx :80"]
 
-    Browser --> nginx
-    nginx -->|/ static| FE
-    nginx -->|/api/*| BE
-    nginx -->|/health| BE
-    MS -->|:8080 exposed| Browser
+    nginx -->|"/ static"| FE["Frontend"]
+    nginx -->|"/api/*"| BE["Node.js Backend :3000"]
+    nginx -->|"/health"| BE
 
-    BE --> PG
-    BE --> Redis
-    BE --> MS
-    BE -->|HTTP| J0S
-    J0S --> J0W
-    J0W --> J0DB
-    J0W --> J0R
+    BE --> PG[("PostgreSQL")]
+    BE --> Redis[("Redis")]
+    BE --> MS["C++ Market Sim :8080"]
+    BE -->|HTTP| J0S["Judge0 Server :2358"]
+
+    J0S --> J0W["Judge0 Worker"]
+    J0W --> J0DB[("Judge0 DB")]
+    J0W --> J0R[("Judge0 Redis")]
 ```
 
 ## Request Flow
@@ -89,6 +75,6 @@ sequenceDiagram
     B->>J: POST /submissions (wrapped code + data)
     J-->>B: execution result
     B->>DB: UPDATE submission (completed, netWorth)
-    B-->>N: {id, status, netWorth}
+    B-->>N: response
     N-->>U: response
 ```

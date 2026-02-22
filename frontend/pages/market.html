@@ -50,51 +50,45 @@
       <div class="chart-controls">
         <button
           @click="fetchCandles('1m')"
-          class="btn btn-small"
+          class="btn"
           :class="{ 'btn-primary': candleInterval === '1m', 'btn-secondary': candleInterval !== '1m' }"
-        >
-          1m
-        </button>
+        >1M</button>
         <button
           @click="fetchCandles('5m')"
-          class="btn btn-small"
+          class="btn"
           :class="{ 'btn-primary': candleInterval === '5m', 'btn-secondary': candleInterval !== '5m' }"
-        >
-          5m
-        </button>
+        >5M</button>
         <button
           @click="fetchCandles('15m')"
-          class="btn btn-small"
+          class="btn"
           :class="{ 'btn-primary': candleInterval === '15m', 'btn-secondary': candleInterval !== '15m' }"
-        >
-          15m
-        </button>
+        >15M</button>
         <button
           @click="fetchCandles('30m')"
-          class="btn btn-small"
+          class="btn"
           :class="{ 'btn-primary': candleInterval === '30m', 'btn-secondary': candleInterval !== '30m' }"
-        >
-          30m
-        </button>
+        >30M</button>
         <button
           @click="fetchCandles('1h')"
-          class="btn btn-small"
+          class="btn"
           :class="{ 'btn-primary': candleInterval === '1h', 'btn-secondary': candleInterval !== '1h' }"
-        >
-          1h
-        </button>
+        >1H</button>
         <button
           @click="fetchCandles('1d')"
-          class="btn btn-small"
+          class="btn"
           :class="{ 'btn-primary': candleInterval === '1d', 'btn-secondary': candleInterval !== '1d' }"
-        >
-          1d
-        </button>
+        >1D</button>
       </div>
     </div>
 
     <div class="orderbook-section">
       <h3>Orderbook: <span x-text="selectedCommodity"></span></h3>
+      <div class="orderbook-meta" x-show="marketStatus">
+        <span class="orderbook-tick">
+          Tick <span x-text="marketStatus?.currentTick?.toLocaleString() || '—'"></span>
+          / <span x-text="marketStatus?.totalTicks?.toLocaleString() || '1,000,000'"></span>
+        </span>
+      </div>
 
       <div x-show="orderbook" class="orderbook">
         <div class="book-side asks">

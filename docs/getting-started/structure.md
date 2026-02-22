@@ -42,15 +42,15 @@ decrypt/
 │
 ├── market_sim/              # C++ market simulation engine
 │   ├── CMakeLists.txt
-│   ├── commodities.json     # Commodity definitions
-│   ├── src/                 # C++ source
+│   ├── commodities.json     # Commodity & simulation config
+│   ├── src/
 │   │   ├── main.cpp
-│   │   ├── MarketSimulator.hpp/cpp
-│   │   ├── OrderBook.hpp/cpp
-│   │   ├── SimClock.hpp/cpp
-│   │   ├── CandleAggregator.hpp/cpp
-│   │   ├── Agent.hpp + agent implementations
-│   │   └── ...
+│   │   ├── engine/          # Simulation, MarketEngine
+│   │   ├── core/            # OrderBook, Commodity, SimClock
+│   │   ├── agents/          # 8 agent types (Agent base class)
+│   │   ├── environment/     # News, CandleAggregator
+│   │   ├── api/             # REST API server (cpp-httplib)
+│   │   └── utils/           # Logger, Random, RuntimeConfig
 │   └── tests/               # Catch2 unit tests
 │
 ├── docker/                  # Docker configuration

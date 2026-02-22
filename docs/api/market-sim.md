@@ -31,7 +31,7 @@ GET /state
 {
   "running": true,
   "currentTick": 54321,
-  "ticksPerDay": 1440,
+  "ticksPerDay": 72000,
   "currentDate": "2025-03-15",
   "totalAgents": 68,
   "totalTrades": 128450
@@ -164,7 +164,7 @@ PUT /config
 
 ```json
 {
-  "ticksPerDay": 1440,
+  "ticksPerDay": 72000,
   "agentCount": 68,
   "circuitBreakerThreshold": 0.10
 }

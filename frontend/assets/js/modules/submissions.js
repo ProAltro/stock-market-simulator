@@ -54,36 +54,32 @@ def run():
 run()
 `,
     cpp: `// Commodity Trading Algorithm (C++)
-// Functions: get_commodities(), get_tick_count(), get_current_tick(),
-// get_price(symbol, tick), get_cash(), get_position(symbol),
-// buy(symbol, quantity), sell(symbol, quantity)
+// Your code runs inside a loop for each tick.
+// Available variables and functions:
+// - get_tick_count()          -> int    (total ticks)
+// - get_current_tick()        -> int    (current tick index)
+// - get_price(symbol, tick)   -> double (price at tick, or -1 = current)
+// - get_cash()                -> double
+// - get_position(symbol)      -> int
+// - buy(symbol, quantity)     -> bool
+// - sell(symbol, quantity)    -> bool
+// Symbols: "OIL", "STEEL", "WOOD", "BRICK", "GRAIN"
 
-#include <iostream>
-#include <vector>
-#include <string>
+// Simple example: Buy OIL when price drops, sell when it rises
+std::string symbol = "OIL";
+double entry_price = 0;
 
-int main() {
-    std::string symbol = "OIL";
-    double entry_price = 0;
-    
-    for (int tick = 0; tick < get_tick_count(); tick++) {
-        double price = get_price(symbol, tick);
-        
-        if (entry_price == 0) {
-            if (get_cash() > price * 10) {
-                buy(symbol, 10);
-                entry_price = price;
-            }
-        } else {
-            double change = (price - entry_price) / entry_price;
-            if (change > 0.05 || change < -0.10) {
-                sell(symbol, get_position(symbol));
-                entry_price = 0;
-            }
-        }
+if (entry_price == 0) {
+    if (get_cash() > get_price(symbol) * 10) {
+        buy(symbol, 10);
+        entry_price = get_price(symbol);
     }
-    
-    return 0;
+} else {
+    double change = (get_price(symbol) - entry_price) / entry_price;
+    if (change > 0.05 || change < -0.10) {
+        sell(symbol, get_position(symbol));
+        entry_price = 0;
+    }
 }
 `,
   },
@@ -147,7 +143,7 @@ int main() {
         const result = await get(`${API_URL}/submissions/${id}`);
         if (result.status === "completed" || result.status === "failed") {
           this.submissionResult = result;
-          await this.fetchLeaderboard();
+          await Promise.all([this.fetchLeaderboard(), this.fetchSubmissions()]);
           return;
         }
       } catch (err) {

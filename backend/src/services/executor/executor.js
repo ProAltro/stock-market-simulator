@@ -171,87 +171,149 @@ print(json.dumps(result))
 }
 
 function generateCppWrapper(dataBundle, userCode) {
-  return `
-#include <iostream>
-#include <vector>
-#include <map>
+  const SYMBOLS = ["OIL", "STEEL", "WOOD", "BRICK", "GRAIN"];
+
+  // Sample every 10th tick so source stays a reasonable size
+  const SAMPLE = 10;
+
+  // Build price arrays per symbol
+  const priceArrays = {};
+  let tickCount = 0;
+  for (const sym of SYMBOLS) {
+    const ticks = dataBundle[sym]?.ticks || [];
+    const sampled = [];
+    for (let i = 0; i < ticks.length; i += SAMPLE) {
+      sampled.push(Number(ticks[i]?.close || 0).toFixed(6));
+    }
+    priceArrays[sym] = sampled;
+    if (sampled.length > tickCount) tickCount = sampled.length;
+  }
+
+  const toArray = (sym) => priceArrays[sym].join(',');
+
+  // Strip #include lines and any outer int main() { ... } wrapper
+  function sanitizeCppUserCode(code) {
+    // Remove all #include lines
+    code = code.replace(/^[ \t]*#include\s*[<"][^">\n]*[">]\s*$/gm, '');
+
+    // If the entire code is wrapped in `int main() { ... return 0; }`, extract the body
+    const mainMatch = code.match(/int\s+main\s*\(\s*\)\s*\{([\s\S]*?)(?:return\s+0\s*;)?\s*\}\s*$/);
+    if (mainMatch) {
+      code = mainMatch[1];
+    }
+
+    // If there's a for loop that iterates over ticks (old per-tick template), extract its body
+    // e.g.: for (int tick = 0; tick < get_tick_count(); tick++) { ... }
+    const forMatch = code.match(/for\s*\([^)]*get_tick_count[^)]*\)\s*\{([\s\S]*)\}\s*$/);
+    if (forMatch) {
+      code = forMatch[1];
+    }
+
+    return code.trim();
+  }
+
+  const sanitizedCode = sanitizeCppUserCode(userCode);
+
+  return `#include <iostream>
 #include <string>
-#include <sstream>
-#include <cmath>
+#include <map>
+#include <algorithm>
 
-// JSON parsing (simple embedded parser)
-${getJSONParserCpp()}
+// ========== AUTO-INJECTED MARKET DATA (sampled) ==========
+const int TICK_COUNT = ${tickCount};
+static const double PRICES_OIL[${tickCount}]   = {${toArray("OIL")}};
+static const double PRICES_STEEL[${tickCount}] = {${toArray("STEEL")}};
+static const double PRICES_WOOD[${tickCount}]  = {${toArray("WOOD")}};
+static const double PRICES_BRICK[${tickCount}] = {${toArray("BRICK")}};
+static const double PRICES_GRAIN[${tickCount}] = {${toArray("GRAIN")}};
 
-// ========== AUTO-INJECTED DATA ==========
-std::string _RAW_DATA = R"(${JSON.stringify(dataBundle)})";
-auto _DATA = parseJSON(_RAW_DATA);
-std::vector<std::string> _COMMODITIES = {"OIL", "STEEL", "WOOD", "BRICK", "GRAIN"};
+// ========== TRADING STATE ==========
+static double   _cash          = ${INITIAL_CASH}.0;
+static int      _positions_OIL   = 0;
+static int      _positions_STEEL = 0;
+static int      _positions_WOOD  = 0;
+static int      _positions_BRICK = 0;
+static int      _positions_GRAIN = 0;
+static int      _trade_count   = 0;
+static int      _current_tick  = 0;
 
-// Trading state
-double _cash = ${INITIAL_CASH}.0;
-std::map<std::string, int> _positions;
-std::vector<Trade> _trades;
-int _current_tick = 0;
+// ========== API ==========
+inline int    get_tick_count()    { return TICK_COUNT; }
+inline int    get_current_tick()  { return _current_tick; }
+inline double get_cash()          { return _cash; }
 
-// ========== DATA ACCESS FUNCTIONS ==========
-
-std::vector<std::string> get_commodities() { return _COMMODITIES; }
-int get_tick_count() { return _DATA["OIL"]["ticks"].size(); }
-int get_current_tick() { return _current_tick; }
-
-double get_cash() { return _cash; }
-std::map<std::string, int> get_positions() { return _positions; }
-int get_position(const std::string& symbol) { 
-    auto it = _positions.find(symbol);
-    return it != _positions.end() ? it->second : 0;
+inline const double* _price_array(const std::string& s) {
+    if (s=="OIL")   return PRICES_OIL;
+    if (s=="STEEL") return PRICES_STEEL;
+    if (s=="WOOD")  return PRICES_WOOD;
+    if (s=="BRICK") return PRICES_BRICK;
+    return PRICES_GRAIN; // Default to GRAIN if not found
 }
 
-double get_price(const std::string& symbol, int tick = -1) {
+inline int& _pos(const std::string& s) {
+    if (s=="OIL")   return _positions_OIL;
+    if (s=="STEEL") return _positions_STEEL;
+    if (s=="WOOD")  return _positions_WOOD;
+    if (s=="BRICK") return _positions_BRICK;
+    return _positions_GRAIN;
+}
+
+inline double get_price(const std::string& symbol, int tick = -1) {
     if (tick < 0) tick = _current_tick;
-    auto ticks = _DATA[symbol]["ticks"];
-    if (tick < ticks.size()) return ticks[tick]["close"];
-    return 0;
+    const double* arr = _price_array(symbol);
+    if (!arr || tick >= TICK_COUNT) return 0.0;
+    return arr[tick];
 }
 
-bool buy(const std::string& symbol, int quantity) {
+inline int get_position(const std::string& symbol) { return _pos(symbol); }
+
+inline bool buy(const std::string& symbol, int quantity) {
     double price = get_price(symbol);
-    if (price <= 0) return false;
-    double cost = price * quantity;
-    if (cost > _cash) return false;
-    
+    double cost  = price * quantity;
+    if (price <= 0 || cost > _cash) return false;
     _cash -= cost;
-    _positions[symbol] += quantity;
-    _trades.push_back({_current_tick, "BUY", symbol, quantity, price});
+    _pos(symbol) += quantity;
+    _trade_count++;
     return true;
 }
 
-bool sell(const std::string& symbol, int quantity) {
-    if (_positions[symbol] < quantity) return false;
+inline bool sell(const std::string& symbol, int quantity) {
+    if (get_position(symbol) < quantity) return false;
     double price = get_price(symbol);
     _cash += price * quantity;
-    _positions[symbol] -= quantity;
-    _trades.push_back({_current_tick, "SELL", symbol, quantity, price});
+    _pos(symbol) -= quantity;
+    _trade_count++;
     return true;
 }
 
-// ========== USER CODE ==========
+// ========== USER STRATEGY ==========
+void strategy() {
+${sanitizedCode.split('\n').map(l => '    ' + l).join('\n')}
+}
+
+// ========== MAIN ==========
 int main() {
-    try {
-        for (_current_tick = 0; _current_tick < get_tick_count(); _current_tick++) {
-            ${userCode.split('\n').map(l => '            ' + l).join('\n')}
-        }
-    } catch (...) {
-        std::cerr << "Strategy error" << std::endl;
+    for (_current_tick = 0; _current_tick < TICK_COUNT; _current_tick++) {
+        strategy();
     }
-    
-    // Calculate final net worth
-    double positions_value = 0;
-    for (auto& c : _COMMODITIES) {
-        positions_value += _positions[c] * get_price(c);
-    }
-    
-    std::cout << "{\\"success\\":true,\\"finalNetWorth\\":" << (_cash + positions_value) 
-              << ",\\"cash\\":" << _cash << ",\\"totalTrades\\":" << _trades.size() << "}" << std::endl;
+
+    // Final net worth
+    double pv = 0;
+    const char* syms[] = {"OIL","STEEL","WOOD","BRICK","GRAIN"};
+    double finals[]    = {
+        PRICES_OIL[TICK_COUNT-1],   PRICES_STEEL[TICK_COUNT-1],
+        PRICES_WOOD[TICK_COUNT-1],  PRICES_BRICK[TICK_COUNT-1],
+        PRICES_GRAIN[TICK_COUNT-1]
+    };
+    int* pos_arr[] = {
+        &_positions_OIL, &_positions_STEEL, &_positions_WOOD,
+        &_positions_BRICK, &_positions_GRAIN
+    };
+    for (int i=0;i<5;i++) pv += *pos_arr[i] * finals[i];
+
+    std::cout << "{\\"success\\":true,\\"finalNetWorth\\":" << (_cash+pv)
+              << ",\\"cash\\":" << _cash
+              << ",\\"totalTrades\\":" << _trade_count << "}" << std::endl;
     return 0;
 }
 `;

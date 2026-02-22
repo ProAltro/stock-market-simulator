@@ -21,7 +21,7 @@ pages/
 ├── compete.html        # Algorithm editor & submission
 ├── market.html         # Live market status & charts
 ├── leaderboard.html    # Competition rankings
-└── docs.html           # Inline API documentation
+└── docs.html           # Inline API documentation (/api)
 ```
 
 Templates are loaded dynamically by `templateLoader.js` and injected into `#pages-container`.
